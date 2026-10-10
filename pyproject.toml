@@ -1,0 +1,121 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hantek-mcp"
+version = "0.1.0"
+description = "Hantek DSO5102P oscilloscope control library, MCP server and desktop GUI with numerical waveform acquisition"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+authors = [
+    { name = "Roberto Carrasco", email = "titos.carrasco@gmail.com" },
+    { name = "Kyleidge" },
+]
+keywords = ["oscilloscope", "hantek", "dso5102p", "mcp", "usb", "instrumentation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Topic :: System :: Hardware :: Hardware Drivers",
+    "Typing :: Typed",
+]
+dependencies = [
+    "mcp>=2.3,<3",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pydantic>=2.12",
+    "anyio>=4.9",
+    "pyusb>=1.2.1",
+    # Bundles libusb-1.0.dll so PyUSB works on Windows without a manual DLL install.
+    "libusb-package>=1.0.26; sys_platform == 'win32'",
+    "uvicorn>=0.31",
+    "starlette>=0.27",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.6", "pyqtgraph>=0.13.7"]
+dev = [
+    "pytest>=8",
+    "pytest-timeout>=2.3",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "build>=1.2",
+]
+exe = ["pyinstaller>=6.6"]
+
+[project.scripts]
+hantek-mcp = "hantek_mcp.cli:main"
+
+[project.gui-scripts]
+hantek-mcp-gui = "hantek_mcp.gui.app:main"
+
+[project.urls]
+Homepage = "https://github.com/Kyleidge/DSO5102P-Python"
+Upstream = "https://github.com/titos-carrasco/DSO5102P-Python"
+Issues = "https://github.com/Kyleidge/DSO5102P-Python/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hantek_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/hantek_mcp",
+    "tests",
+    "docs/*.md",
+    "scripts",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -m 'not hardware'"
+markers = [
+    "hardware: requires a physical DSO5102P connected over USB (never run in CI)",
+    "gui: requires PySide6 and pyqtgraph",
+    "slow: slower end-to-end tests",
+]
+timeout = 120
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+src = ["src", "tests"]
+extend-exclude = ["legacy"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PTH", "N", "C4", "PL"]
+ignore = [
+    "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "PLW0603",
+    "RUF001", "RUF002", "RUF003",
+    "N802", "N815",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLC0415", "S101"]
+"src/hantek_mcp/gui/**" = ["N802", "PLC0415"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["src/hantek_mcp"]
+exclude = ["src/hantek_mcp/gui/"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["usb.*", "libusb_package.*", "scipy.*", "pyqtgraph.*", "uvicorn.*"]
+ignore_missing_imports = true
