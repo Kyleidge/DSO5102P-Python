@@ -124,6 +124,13 @@ class ControllerCore:
         self.activity: deque[dict[str, Any]] = deque(maxlen=500)
         self._listeners: list[Listener] = []
         self._busy_op: str | None = None
+        # Abort handling: request_abort() bumps a generation counter; the outermost running operation
+        # (or workflow) captured the generation when it started and aborts when it changes. Later
+        # operations start with the new generation, so an abort never "sticks".
+        self._abort_gen = 0
+        self._token: int | None = None
+        self._depth = 0
+        self._workflow: str | None = None
         self._ownership = OwnershipLock(
             config.storage.data_dir, f"usb-{config.usb.vendor_id:04x}-{config.usb.product_id:04x}"
         )
@@ -187,7 +194,12 @@ class ControllerCore:
         """Serialise an instrument operation and translate failures consistently."""
         with self.lock:
             session = self.require_session()
-            self._busy_op = name
+            outer = self._depth == 0
+            if outer:
+                self._busy_op = name
+                if self._workflow is None:
+                    self._begin_token()
+            self._depth += 1
             try:
                 yield session
             except DeviceDisconnectedError as e:
@@ -195,13 +207,44 @@ class ControllerCore:
                 self._mark_lost()
                 raise
             except HantekError as e:
-                self.record_error(name, e)
+                if outer:
+                    self.record_error(name, e)
                 raise
             finally:
-                self._busy_op = None
+                self._depth -= 1
+                if outer:
+                    self._busy_op = None
+                    if self._workflow is None:
+                        self._token = None
+
+    def _begin_token(self) -> None:
+        self._token = self._abort_gen
+        self.abort_event.clear()
+
+    def request_abort(self) -> None:
+        """Abort the running operation/workflow at its next check point (emergency stop for software
+        activity; it cannot stop the instrument's own acquisition in progress)."""
+        self._abort_gen += 1
+        self.abort_event.set()
+        self.emit("abort_requested", busy_operation=self._busy_op, workflow=self._workflow)
+
+    def begin_workflow(self, name: str) -> None:
+        if self._workflow is not None:
+            raise UnsupportedOperationError(f"workflow {self._workflow!r} is already running")
+        self._workflow = name
+        self._begin_token()
+
+    def end_workflow(self) -> None:
+        self._workflow = None
+        if self._depth == 0:
+            self._token = None
+
+    @property
+    def active_workflow(self) -> str | None:
+        return self._workflow
 
     def check_abort(self) -> None:
-        if self.abort_event.is_set():
+        if self._token is not None and self._token != self._abort_gen:
             raise AbortedError("operation aborted by request")
 
     # -- connection ------------------------------------------------------------------------------
