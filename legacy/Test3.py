@@ -14,7 +14,7 @@ def main():
 
     print( 'Saving ...' )
     st = dso.ReadSystemTime()
-    cv2.imwrite( './screenshot/' + st + '.png', r )
+    cv2.imwrite( st.replace( ':', '' ) + '.png', r )  # ':' is invalid in Windows file names
 
     print( 'Press ESC to exit ...' )
     cv2.imshow( st, r )

@@ -1,0 +1,29 @@
+name: Windows executable (optional)
+
+# Manually triggered: builds a PyInstaller one-folder bundle of the GUI/CLI.
+# The pip-installable package remains the primary deliverable.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pyinstaller:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --extra gui --extra exe
+      - run: uv run pyinstaller packaging/hantek-mcp.spec --noconfirm
+      - name: Smoke test the bundle
+        shell: pwsh
+        run: |
+          ./dist/hantek-mcp/hantek-mcp.exe --version
+          ./dist/hantek-mcp/hantek-mcp.exe capture --simulate --measure frequency
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hantek-mcp-windows
+          path: dist/hantek-mcp

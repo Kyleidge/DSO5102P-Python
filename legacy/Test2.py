@@ -7,26 +7,23 @@ from rcr.dso5102p.DSO5102P import DSO5102P
 def main():
     dso = DSO5102P(  0x049f, 0x505a, True )
 
-    print( 'Listing /*.inf' )
-    r = dso.RemoteShell( 'ls /*.inf' )
-    print( r )
-
+    # RemoteShell ('ls /*.inf') was removed for safety; the file names are known.
 
     print( 'Getting keyprotocol.inf' )
     r = dso.ReadFile( '/keyprotocol.inf' )
-    f=open( './inf/keyprotocol.inf', 'w' )
+    f=open( './keyprotocol.inf', 'w' )
     f.write( r )
     f.close()
 
     print( 'Getting protocol.inf' )
     r = dso.ReadFile( '/protocol.inf' )
-    f=open( './inf/protocol.inf', 'w' )
+    f=open( './protocol.inf', 'w' )
     f.write( r )
     f.close()
 
     print( 'Getting sys.inf' )
     r = dso.ReadFile( '/sys.inf' )
-    f=open( './inf/sys.inf', 'w' )
+    f=open( './sys.inf', 'w' )
     f.write( r )
     f.close()
 

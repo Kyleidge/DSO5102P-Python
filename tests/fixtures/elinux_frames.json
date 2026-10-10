@@ -1,0 +1,77 @@
+{
+  "source": "https://elinux.org/Das_Oszi_Protocol (retrieved 2026-10-10)",
+  "frames": [
+    {
+      "name": "read settings request",
+      "marker": 83,
+      "command": 1,
+      "payload": [],
+      "hex": "5302000156"
+    },
+    {
+      "name": "start acquisition",
+      "marker": 83,
+      "command": 18,
+      "payload": [
+        0,
+        0
+      ],
+      "hex": "53040012000069"
+    },
+    {
+      "name": "stop acquisition",
+      "marker": 83,
+      "command": 18,
+      "payload": [
+        0,
+        1
+      ],
+      "hex": "5304001200016a"
+    },
+    {
+      "name": "lock panel",
+      "marker": 83,
+      "command": 18,
+      "payload": [
+        1,
+        1
+      ],
+      "hex": "5304001201016b"
+    },
+    {
+      "name": "unlock panel",
+      "marker": 83,
+      "command": 18,
+      "payload": [
+        1,
+        0
+      ],
+      "hex": "5304001201006a"
+    },
+    {
+      "name": "screenshot request",
+      "marker": 83,
+      "command": 32,
+      "payload": [],
+      "hex": "5302002075"
+    },
+    {
+      "name": "read system time",
+      "marker": 83,
+      "command": 33,
+      "payload": [],
+      "hex": "5302002176"
+    }
+  ],
+  "responses": [
+    {
+      "name": "empty settings reply",
+      "hex": "53020081d6"
+    },
+    {
+      "name": "beep reply (debug)",
+      "hex": "430200c409"
+    }
+  ],
+  "notes": "All checksums equal the low byte of the sum of the preceding bytes, matching the values printed on elinux (e.g. start 0x69, stop 0x6a, lock 0x6b, unlock 0x6a)."
+}
