@@ -1,0 +1,5 @@
+# udev rule for the Hantek DSO5000 series (VID:PID 049f:505a). Install with:
+#   sudo cp scripts/99-hantek-dso.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+# Grants the logged-in user access (uaccess) instead of making the device world-writable.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="049f", ATTR{idProduct}=="505a", TAG+="uaccess"
