@@ -23,7 +23,12 @@ class HantekError(Exception):
         self.details: dict[str, Any] = dict(details or {})
 
     def to_dict(self) -> dict[str, Any]:
-        return {"code": self.code, "message": self.message, "retryable": self.retryable, "details": self.details}
+        return {
+            "code": self.code,
+            "message": self.message,
+            "retryable": self.retryable,
+            "details": self.details,
+        }
 
     def __str__(self) -> str:
         return f"[{self.code}] {self.message}"

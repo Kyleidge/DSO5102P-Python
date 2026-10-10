@@ -193,5 +193,7 @@ def decode_frame(raw: bytes) -> Frame:
     dec = FrameDecoder()
     frames = dec.feed(raw)
     if len(frames) != 1 or dec.pending:
-        raise FramingError(f"expected exactly one frame, got {len(frames)} with {dec.pending} trailing byte(s)")
+        raise FramingError(
+            f"expected exactly one frame, got {len(frames)} with {dec.pending} trailing byte(s)"
+        )
     return frames[0]

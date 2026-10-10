@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from mcp.server.mcpserver import MCPServer
 
 RULES = """
@@ -19,8 +21,8 @@ Ground rules (always):
 def register_prompts(app: MCPServer) -> list[str]:
     names: list[str] = []
 
-    def prompt(title: str, description: str):  # type: ignore[no-untyped-def]
-        def deco(fn):  # type: ignore[no-untyped-def]
+    def prompt(title: str, description: str) -> Callable[[Callable[..., str]], Callable[..., str]]:
+        def deco(fn: Callable[..., str]) -> Callable[..., str]:
             names.append(fn.__name__)
             return app.prompt(name=fn.__name__, title=title, description=description)(fn)
 

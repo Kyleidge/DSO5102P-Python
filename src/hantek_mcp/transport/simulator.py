@@ -131,6 +131,8 @@ class SimulatedScope:
         self.running = True
         self.single_armed = False
         self.single_polls = 0
+        #: Attenuation of the probe physically attached (None: matches the instrument setting).
+        self.physical_probe: dict[int, int | None] = {1: None, 2: None}
         self.panel_locked = False
         self.menu: str | None = None
         self.buffers: dict[int, npt.NDArray[np.int8]] = {}
@@ -189,7 +191,7 @@ class SimulatedScope:
             shift = float(self.rng.uniform(0, 1e-3))
         n = self.record_length()
         dt = self.sample_interval()
-        t = (np.arange(n) - n / 2.0) * dt + shift
+        t = (np.arange(n, dtype=np.float64) - n / 2.0) * dt + shift
         for ch in (1, 2):
             sig = self.signals[ch]
             v = sig.evaluate(t)
@@ -204,7 +206,10 @@ class SimulatedScope:
                 v = np.zeros(n)
             if self.raw[f"VERT-CH{ch}-RPHASE"]:
                 v = -v
-            counts = v * NOMINAL_COUNTS_PER_DIV / self.vpd(ch) + self.raw[f"VERT-CH{ch}-POS"]
+            setting_probe = PROBE_FACTORS[self.raw[f"VERT-CH{ch}-PROBE"]]
+            bnc_v = v / (self.physical_probe[ch] or setting_probe)
+            vb = VOLTS_PER_DIV[self.raw[f"VERT-CH{ch}-VB"]]
+            counts = bnc_v * NOMINAL_COUNTS_PER_DIV / vb + self.raw[f"VERT-CH{ch}-POS"]
             self.buffers[ch] = np.clip(np.round(counts), ADC_MIN, ADC_MAX).astype(np.int8)
         self.acquisitions += 1
         return triggered
@@ -246,7 +251,7 @@ class SimulatedScope:
         ch = self.trigger_source()
         sig = self.signals.get(ch) if ch else None
         if sig is not None and sig.periodic() and self.can_trigger() is not None:
-            self.raw["TRIG-FREQUENCY"] = int(round(sig.frequency_hz * 1000))
+            self.raw["TRIG-FREQUENCY"] = round(sig.frequency_hz * 1000)
         else:
             self.raw["TRIG-FREQUENCY"] = 0
 
@@ -307,8 +312,16 @@ class SimulatedScope:
             self.menu = "TRIG"
         elif key == Key.HORIZ_MENU:
             self.menu = "HORIZ"
-        elif key in (Key.MEASURE, Key.ACQUIRE, Key.UTILITY, Key.CURSOR, Key.DISPLAY, Key.SAVE_RECALL,
-                     Key.MATH_MENU, Key.HELP):  # fmt: skip
+        elif key in (
+            Key.MEASURE,
+            Key.ACQUIRE,
+            Key.UTILITY,
+            Key.CURSOR,
+            Key.DISPLAY,
+            Key.SAVE_RECALL,
+            Key.MATH_MENU,
+            Key.HELP,
+        ):
             self.menu = key.name
         elif key == Key.TIMEBASE_UP:
             self._clamp("HORIZ-TB", +1, *DSO5102P_TB_RANGE)
@@ -321,10 +334,10 @@ class SimulatedScope:
         elif key == Key.TRIG_LEVEL_ZERO:
             self.raw["TRIG-VPOS"] = 0
         elif key == Key.TRIG_LEVEL_50:
-            ch = self.trigger_source()
-            if ch is not None:
-                lo, hi = self.signals[ch].extremes()
-                self.raw["TRIG-VPOS"] = int(round((lo + hi) / 2 * NOMINAL_COUNTS_PER_DIV / self.vpd(ch)))
+            src = self.trigger_source()
+            if src is not None:
+                lo, hi = self.signals[src].extremes()
+                self.raw["TRIG-VPOS"] = round((lo + hi) / 2 * NOMINAL_COUNTS_PER_DIV / self.vpd(src))
         elif key == Key.FORCE_TRIG:
             if self.single_armed:
                 self._acquire(force=True)
@@ -356,10 +369,8 @@ class SimulatedScope:
             lo, hi = sig.extremes()
             span = max(hi - lo, 1e-3)
             probe = PROBE_FACTORS[self.raw[f"VERT-CH{ch}-PROBE"]]
-            self.raw[f"VERT-CH{ch}-VB"] = nearest_index(
-                VOLTS_PER_DIV, span / 5.0 / probe, *DSO5102P_VB_RANGE
-            )
-            self.raw[f"VERT-CH{ch}-POS"] = int(round(-(lo + hi) / 2 * NOMINAL_COUNTS_PER_DIV / self.vpd(ch)))
+            self.raw[f"VERT-CH{ch}-VB"] = nearest_index(VOLTS_PER_DIV, span / 5.0 / probe, *DSO5102P_VB_RANGE)
+            self.raw[f"VERT-CH{ch}-POS"] = round(-(lo + hi) / 2 * NOMINAL_COUNTS_PER_DIV / self.vpd(ch))
             self.raw[f"VERT-CH{ch}-DISP"] = int(sig.waveform != "off")
         src = 1 if self.signals[1].waveform != "off" else 2
         sig = self.signals[src]
@@ -369,7 +380,7 @@ class SimulatedScope:
                 TIMEBASE_S_PER_DIV, 2.5 / sig.frequency_hz / 16, *DSO5102P_TB_RANGE
             )
         lo, hi = sig.extremes()
-        self.raw["TRIG-VPOS"] = int(round((lo + hi) / 2 * NOMINAL_COUNTS_PER_DIV / self.vpd(src)))
+        self.raw["TRIG-VPOS"] = round((lo + hi) / 2 * NOMINAL_COUNTS_PER_DIV / self.vpd(src))
         self.running, self.single_armed = True, False
 
     # -- screenshot ------------------------------------------------------------------------------
@@ -433,10 +444,11 @@ class SimulatedTransport(Transport):
                     if self.faults.drop_responses > 0:
                         self.faults.drop_responses -= 1
                         continue
+                    out = resp
                     if self.faults.corrupt_checksums > 0:
                         self.faults.corrupt_checksums -= 1
-                        resp = resp[:-1] + bytes([(resp[-1] + 1) & 0xFF])
-                    self._queue(resp)
+                        out = resp[:-1] + bytes([(resp[-1] + 1) & 0xFF])
+                    self._queue(out)
         return len(data)
 
     def _queue(self, resp: bytes) -> None:
@@ -506,7 +518,7 @@ class SimulatedTransport(Transport):
         if cmd == Command.WRITE_SETTINGS:
             try:
                 values, _ = decode_settings(payload, sc.layout)
-            except Exception:  # noqa: BLE001 - mirror the instrument's status byte
+            except Exception:
                 return [encode_response(cmd, b"\x01")]
             sc.raw.update(values)
             sc.settings_writes += 1
@@ -561,7 +573,8 @@ class SimulatedTransport(Transport):
     @staticmethod
     def _bulk(cmd: int, data: bytes) -> list[bytes]:
         frames = [
-            encode_response(cmd, bytes([1]) + data[i : i + FILE_CHUNK]) for i in range(0, len(data), FILE_CHUNK)
+            encode_response(cmd, bytes([1]) + data[i : i + FILE_CHUNK])
+            for i in range(0, len(data), FILE_CHUNK)
         ]
         frames.append(encode_response(cmd, bytes([2, sum(data) & 0xFF])))
         return frames

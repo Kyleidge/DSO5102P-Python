@@ -72,12 +72,14 @@ def spectrum(
     }
 
 
-def find_peaks(spec: dict[str, Any], max_peaks: int = 10, min_relative_db: float = -60.0) -> list[dict[str, Any]]:
+def find_peaks(
+    spec: dict[str, Any], max_peaks: int = 10, min_relative_db: float = -60.0
+) -> list[dict[str, Any]]:
     freqs: npt.NDArray[np.float64] = spec["freqs_hz"]
     amp: npt.NDArray[np.float64] = spec["amplitude"]
     if amp.size < 3:
         return []
-    ref = float(amp[1:].max()) if amp.size > 1 else 0.0
+    ref = float(np.max(amp[1:])) if amp.size > 1 else 0.0
     if ref <= 0:
         return []
     height = ref * 10 ** (min_relative_db / 20)
@@ -95,13 +97,16 @@ def find_peaks(spec: dict[str, Any], max_peaks: int = 10, min_relative_db: float
             if denom < 0:
                 p = 0.5 * (la - lc) / denom
                 f = float(freqs[k] + p * df)
-                m = float(np.exp(lb - 0.25 * (la - lc) * p))
-        peaks.append({
-            "frequency_hz": f,
-            "amplitude": m,
-            "relative_db": 20 * math.log10(m / ref) if m > 0 else None,
-            "bin": int(k),
-        })  # fmt: skip
+                if spec.get("window") != "flattop":  # flat-top bins already read the true amplitude
+                    m = float(np.exp(lb - 0.25 * (la - lc) * p))
+        peaks.append(
+            {
+                "frequency_hz": f,
+                "amplitude": m,
+                "relative_db": 20 * math.log10(m / ref) if m > 0 else None,
+                "bin": int(k),
+            }
+        )
     return peaks
 
 
@@ -115,7 +120,7 @@ def harmonic_analysis(spec: dict[str, Any], fundamental_hz: float, n_harmonics: 
         f = h * fundamental_hz
         if f > spec["nyquist_hz"]:
             break
-        k = int(round(f / df))
+        k = round(f / df)
         lo, hi = max(1, k - 2), min(amp.size - 1, k + 2)
         j = lo + int(np.argmax(amp[lo : hi + 1]))
         out.append({"harmonic": h, "frequency_hz": float(freqs[j]), "amplitude": float(amp[j])})

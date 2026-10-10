@@ -46,7 +46,9 @@ def build_bridge(url: str, token: str | None = None) -> Server[Any]:
     async def call_tool(_ctx: Any, params: types.CallToolRequestParams) -> types.CallToolResult:
         return await c().call_tool(params.name, params.arguments or {})
 
-    async def list_resources(_ctx: Any, params: types.PaginatedRequestParams | None) -> types.ListResourcesResult:
+    async def list_resources(
+        _ctx: Any, params: types.PaginatedRequestParams | None
+    ) -> types.ListResourcesResult:
         return await c().list_resources(cursor=params.cursor if params else None)
 
     async def list_templates(

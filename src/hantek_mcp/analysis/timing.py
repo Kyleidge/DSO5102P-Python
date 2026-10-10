@@ -91,12 +91,18 @@ def detect_pulses(
         "truncated": len(pulses) > max_pulses,
         "width_stats_s": None
         if not widths.size
-        else {"min": float(widths.min()), "max": float(widths.max()), "mean": float(widths.mean()),
-              "std": float(widths.std())},  # fmt: skip
+        else {
+            "min": float(np.min(widths)),
+            "max": float(np.max(widths)),
+            "mean": float(widths.mean()),
+            "std": float(widths.std()),
+        },
     }
 
 
-def cross_correlation(a: npt.ArrayLike, b: npt.ArrayLike, dt: float, max_lag_s: float | None = None) -> dict[str, Any]:
+def cross_correlation(
+    a: npt.ArrayLike, b: npt.ArrayLike, dt: float, max_lag_s: float | None = None
+) -> dict[str, Any]:
     """Lag of ``b`` relative to ``a`` (positive: ``b`` is delayed) from the normalised cross-correlation
     peak, refined by parabolic interpolation."""
     x, y = as_float(a), as_float(b)
@@ -136,10 +142,10 @@ def phase_difference(a: npt.ArrayLike, b: npt.ArrayLike, dt: float) -> dict[str,
         raise MeasurementError("records must have the same length")
     fr = frequency(x, dt)
     f0 = fr["frequency_hz"]
-    cycles = int(math.floor(x.size * dt * f0))
+    cycles = math.floor(x.size * dt * f0)
     if cycles < 1:
         raise MeasurementError("need at least one complete cycle")
-    n = int(round(cycles / (f0 * dt)))
+    n = round(cycles / (f0 * dt))
     n = min(n, x.size)
     tt = np.arange(n) * dt
     ref = np.exp(-2j * np.pi * f0 * tt)
@@ -200,7 +206,9 @@ def compare_records(
         "length_a": int(x.size),
         "length_b": int(y.size),
         "same_length": x.size == y.size,
-        "same_sample_interval": dt_a is not None and dt_b is not None and abs(dt_a - dt_b) <= 1e-12 * max(dt_a, dt_b),
+        "same_sample_interval": dt_a is not None
+        and dt_b is not None
+        and abs(dt_a - dt_b) <= 1e-12 * max(dt_a, dt_b),
         "vpp_a": float(np.ptp(x)),
         "vpp_b": float(np.ptp(y)),
         "mean_a": float(x.mean()),
@@ -213,9 +221,7 @@ def compare_records(
         out["rms_difference"] = float(np.sqrt(np.mean(diff * diff)))
         out["max_abs_difference"] = float(np.abs(diff).max())
         sx, sy = x.std(), y.std()
-        out["correlation_coefficient"] = (
-            None if sx == 0 or sy == 0 else float(np.corrcoef(x, y)[0, 1])
-        )
+        out["correlation_coefficient"] = None if sx == 0 or sy == 0 else float(np.corrcoef(x, y)[0, 1])
     for key, arr, dt in (("a", x, dt_a), ("b", y, dt_b)):
         try:
             fr = frequency(arr, dt)

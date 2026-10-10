@@ -77,7 +77,9 @@ def build_server(
                 await anyio.to_thread.run_sync(service.connect)
                 log.info("connected to the instrument (%s backend)", service.config.backend)
             except HantekError as e:
-                log.warning("auto-connect failed: %s (tools will report NOT_CONNECTED until scope_connect)", e)
+                log.warning(
+                    "auto-connect failed: %s (tools will report NOT_CONNECTED until scope_connect)", e
+                )
         try:
             yield {"service": service}
         finally:
@@ -147,9 +149,13 @@ class BearerAuthMiddleware:
             auth = headers.get(b"authorization", b"")
             ok = auth.startswith(b"Bearer ") and hmac.compare_digest(auth[7:].strip(), self.token)
             if not ok:
-                await send({"type": "http.response.start", "status": 401,
-                            "headers": [(b"content-type", b"application/json"),
-                                        (b"www-authenticate", b"Bearer")]})  # fmt: skip
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 401,
+                        "headers": [(b"content-type", b"application/json"), (b"www-authenticate", b"Bearer")],
+                    }
+                )
                 await send({"type": "http.response.body", "body": b'{"error":"unauthorized"}'})
                 return
         await self.app(scope, receive, send)
@@ -178,7 +184,16 @@ def run_http(service: ScopeService, auto_connect: bool = True) -> None:
     cfg = service.config
     app = build_server(service, auto_connect=auto_connect)
     asgi = http_app(app, cfg)
-    log.info("serving MCP over Streamable HTTP at http://%s:%d%s", cfg.server.http_host, cfg.server.http_port,
-             cfg.server.http_path)  # fmt: skip
-    uvicorn.run(asgi, host=cfg.server.http_host, port=cfg.server.http_port, log_level=cfg.log_level.lower(),
-                log_config=None)  # fmt: skip
+    log.info(
+        "serving MCP over Streamable HTTP at http://%s:%d%s",
+        cfg.server.http_host,
+        cfg.server.http_port,
+        cfg.server.http_path,
+    )
+    uvicorn.run(
+        asgi,
+        host=cfg.server.http_host,
+        port=cfg.server.http_port,
+        log_level=cfg.log_level.lower(),
+        log_config=None,
+    )

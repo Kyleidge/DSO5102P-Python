@@ -31,18 +31,29 @@ T = TypeVar("T")
 ServiceGetter = Callable[[], ScopeService]
 
 RO = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
-ACQ = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False)
-SET = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
-DEL = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False)
+ACQ = ToolAnnotations(
+    read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
+)
+SET = ToolAnnotations(
+    read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=False
+)
+DEL = ToolAnnotations(
+    read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False
+)
 
 Channel = Annotated[int, Field(ge=1, le=2, description="Input channel: 1 (CH1) or 2 (CH2)")]
 OptChannel = Annotated[
-    int | None, Field(ge=1, le=2, description="Channel to acquire a NEW record from when capture_id is omitted")
+    int | None,
+    Field(ge=1, le=2, description="Channel to acquire a NEW record from when capture_id is omitted"),
 ]
-CaptureId = Annotated[str, Field(min_length=1, max_length=128, description="Capture id returned by a capture tool")]
+CaptureId = Annotated[
+    str, Field(min_length=1, max_length=128, description="Capture id returned by a capture tool")
+]
 OptCaptureId = Annotated[
     str | None,
-    Field(max_length=128, description="Existing capture to analyse; omit to acquire a new record on `channel`"),
+    Field(
+        max_length=128, description="Existing capture to analyse; omit to acquire a new record on `channel`"
+    ),
 ]
 Mode = Annotated[
     Literal["single", "stop_and_read", "running"],
@@ -69,11 +80,26 @@ Metric = Literal[CONDITION_METRICS]  # type: ignore[valid-type]
 
 class PlanStep(BaseModel):
     action: Literal[
-        "enable_channel", "set_vertical_scale", "set_vertical_offset", "set_coupling", "set_probe_attenuation",
-        "set_timebase", "set_trigger_source", "set_trigger_mode", "set_trigger_slope", "set_trigger_level",
-        "capture", "capture_both_channels", "measure", "fft", "phase", "channel_delay", "wait",
-        "start_acquisition", "stop_acquisition",
-    ]  # fmt: skip
+        "enable_channel",
+        "set_vertical_scale",
+        "set_vertical_offset",
+        "set_coupling",
+        "set_probe_attenuation",
+        "set_timebase",
+        "set_trigger_source",
+        "set_trigger_mode",
+        "set_trigger_slope",
+        "set_trigger_level",
+        "capture",
+        "capture_both_channels",
+        "measure",
+        "fft",
+        "phase",
+        "channel_delay",
+        "wait",
+        "start_acquisition",
+        "stop_acquisition",
+    ]
     args: dict[str, Any] = Field(
         default_factory=dict,
         description="Keyword arguments of the matching service call, e.g. {'channel': 1, 'volts_per_div': 0.5}; "
@@ -81,7 +107,7 @@ class PlanStep(BaseModel):
     )
 
 
-def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # noqa: C901 - flat tool table
+def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
     names: list[str] = []
 
     async def call(tool: str, fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
@@ -95,8 +121,18 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
         except Exception as e:
             log.exception("tool %s failed unexpectedly", tool)
             svc.record_tool_call(tool, False, (time.perf_counter() - t0) * 1000, "INTERNAL_ERROR")
-            raise ToolError(json.dumps({"error": {"code": "INTERNAL_ERROR", "message": repr(e), "retryable": False,
-                                                  "details": {}}})) from e  # fmt: skip
+            raise ToolError(
+                json.dumps(
+                    {
+                        "error": {
+                            "code": "INTERNAL_ERROR",
+                            "message": repr(e),
+                            "retryable": False,
+                            "details": {},
+                        }
+                    }
+                )
+            ) from e
         svc.record_tool_call(tool, True, (time.perf_counter() - t0) * 1000)
         return result
 
@@ -142,7 +178,9 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
 
     @tool(RO, "Read all settings")
     async def scope_get_settings(
-        include_raw: Annotated[bool, Field(description="Also return every raw field of the settings record")] = False,
+        include_raw: Annotated[
+            bool, Field(description="Also return every raw field of the settings record")
+        ] = False,
     ) -> dict[str, Any]:
         """Read the complete settings record back from the instrument and decode channels, trigger, timebase and
         acquisition. Each decoded table carries its provenance."""
@@ -167,9 +205,18 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
     @tool(SET, "Set vertical scale")
     async def scope_set_vertical_scale(
         channel: Channel,
-        volts_per_div: Annotated[float, Field(gt=0, le=10000, description="V/div as shown on screen, i.e. at the "
-                                              "probe tip including probe attenuation (1-2-5 sequence)")],  # fmt: skip
-        snap: Annotated[bool, Field(description="Snap to the nearest available value instead of rejecting")] = False,
+        volts_per_div: Annotated[
+            float,
+            Field(
+                gt=0,
+                le=10000,
+                description="V/div as shown on screen, i.e. at the "
+                "probe tip including probe attenuation (1-2-5 sequence)",
+            ),
+        ],
+        snap: Annotated[
+            bool, Field(description="Snap to the nearest available value instead of rejecting")
+        ] = False,
     ) -> dict[str, Any]:
         """Set V/div. Unsupported values are rejected with the allowed list. Implemented with front-panel knob
         emulation and confirmed by read-back (see result.verification)."""
@@ -178,8 +225,14 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
     @tool(SET, "Set vertical offset")
     async def scope_set_vertical_offset(
         channel: Channel,
-        divisions: Annotated[float, Field(ge=-10, le=10, description="Ground-marker position in divisions from "
-                                          "screen centre (positive = up)")],  # fmt: skip
+        divisions: Annotated[
+            float,
+            Field(
+                ge=-10,
+                le=10,
+                description="Ground-marker position in divisions from screen centre (positive = up)",
+            ),
+        ],
     ) -> dict[str, Any]:
         """Move the channel's vertical position by knob emulation, re-reading the settings until it converges."""
         return await call("scope_set_vertical_offset", S().set_vertical_offset, channel, divisions)
@@ -190,16 +243,26 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
         return await call("scope_set_coupling", S().set_coupling, channel, coupling)
 
     @tool(SET, "Set probe attenuation")
-    async def scope_set_probe_attenuation(channel: Channel, attenuation: Literal[1, 10, 100, 1000]) -> dict[str, Any]:
+    async def scope_set_probe_attenuation(
+        channel: Channel, attenuation: Literal[1, 10, 100, 1000]
+    ) -> dict[str, Any]:
         """Set the probe attenuation factor. It must match the physical probe; it only rescales readings."""
         return await call("scope_set_probe_attenuation", S().set_probe, channel, attenuation)
 
     # ---------------------------------------------------------------- timebase & acquisition
     @tool(SET, "Set timebase")
     async def scope_set_timebase(
-        seconds_per_div: Annotated[float, Field(gt=0, le=40, description="s/div from the 2-4-8 sequence "
-                                                "(4 ns .. 40 s), e.g. 0.0002 for 200 us/div")],  # fmt: skip
-        snap: Annotated[bool, Field(description="Snap to the nearest available value instead of rejecting")] = False,
+        seconds_per_div: Annotated[
+            float,
+            Field(
+                gt=0,
+                le=40,
+                description="s/div from the 2-4-8 sequence (4 ns .. 40 s), e.g. 0.0002 for 200 us/div",
+            ),
+        ],
+        snap: Annotated[
+            bool, Field(description="Snap to the nearest available value instead of rejecting")
+        ] = False,
     ) -> dict[str, Any]:
         """Set the horizontal scale (knob emulation, verified by read-back)."""
         return await call("scope_set_timebase", S().set_timebase, seconds_per_div, snap)
@@ -230,9 +293,16 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
         channel: Channel,
         mode: Mode = "single",
         timeout_s: Timeout = 5.0,
-        force_on_timeout: Annotated[bool, Field(description="If no trigger occurs, force one (record is then "
-                                                "not trigger-aligned; freshness=forced_new)")] = False,  # fmt: skip
-        label: Annotated[str | None, Field(max_length=64, description="Optional label stored with the capture")] = None,
+        force_on_timeout: Annotated[
+            bool,
+            Field(
+                description="If no trigger occurs, force one (record is then "
+                "not trigger-aligned; freshness=forced_new)"
+            ),
+        ] = False,
+        label: Annotated[
+            str | None, Field(max_length=64, description="Optional label stored with the capture")
+        ] = None,
     ) -> dict[str, Any]:
         """Acquire and download a complete numerical record (raw 8-bit samples + time + volts) for one channel.
         Returns compact metadata and a capture_id (no bulk arrays): freshness, scaling status, quality (clipping,
@@ -248,7 +318,9 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
     ) -> dict[str, Any]:
         """Capture CH1 and CH2 from the same acquisition (one trigger, sequential download) sharing a group_id.
         `simultaneity` states whether the records are guaranteed to come from the same acquisition."""
-        return await call("scope_capture_both_channels", S().capture_both, mode, timeout_s, force_on_timeout, label)
+        return await call(
+            "scope_capture_both_channels", S().capture_both, mode, timeout_s, force_on_timeout, label
+        )
 
     @tool(RO, "Acquisition state")
     async def scope_get_acquisition_state() -> dict[str, Any]:
@@ -262,7 +334,9 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
         return await call("scope_get_trigger", S().get_trigger)
 
     @tool(SET, "Set trigger source")
-    async def scope_set_trigger_source(source: Literal["CH1", "CH2", "EXT", "EXT/5", "AC50"]) -> dict[str, Any]:
+    async def scope_set_trigger_source(
+        source: Literal["CH1", "CH2", "EXT", "EXT/5", "AC50"],
+    ) -> dict[str, Any]:
         """Set the edge-trigger source (requires trigger type Edge on the instrument)."""
         return await call("scope_set_trigger_source", S().set_trigger_source, source)
 
@@ -285,8 +359,12 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
 
     @tool(SET, "Set trigger level")
     async def scope_set_trigger_level(
-        volts: Annotated[float | None, Field(description="Level in volts on the source channel (CH1/CH2 only)")] = None,
-        fifty_percent: Annotated[bool, Field(description="Use the instrument's 'set to 50%' instead")] = False,
+        volts: Annotated[
+            float | None, Field(description="Level in volts on the source channel (CH1/CH2 only)")
+        ] = None,
+        fifty_percent: Annotated[
+            bool, Field(description="Use the instrument's 'set to 50%' instead")
+        ] = False,
     ) -> dict[str, Any]:
         """Set the trigger level. Quantised to 1/25 div; the volts conversion uses the nominal scaling model."""
         return await call("scope_set_trigger_level", S().set_trigger_level, volts, fifty_percent)
@@ -304,20 +382,34 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
             acquire_mode: Mode = "single",
             require_verified_scaling: RequireVerified = False,
         ) -> dict[str, Any]:
-            return await call(f"scope_measure_{kind}", S().measure, kind, capture_id, channel, acquire_mode,
-                              require_verified_scaling)  # fmt: skip
+            return await call(
+                f"scope_measure_{kind}",
+                S().measure,
+                kind,
+                capture_id,
+                channel,
+                acquire_mode,
+                require_verified_scaling,
+            )
 
         fn.__name__ = f"scope_measure_{kind}"
         fn.__doc__ = (
-            doc + " Computed in software from the full downloaded record. Pass capture_id to analyse an existing "
+            doc
+            + " Computed in software from the full downloaded record. Pass capture_id to analyse an existing "
             "capture or channel to acquire a new one. Check `valid`, `warnings`, `voltage_scaling_status` and "
             "`time_scaling_status` before reporting the value."
         )
         tool(RO, title)(fn)
 
-    _measure_tool("voltage", "Measure voltages", "Max, min, peak-to-peak, mean, RMS, AC RMS, top, base, amplitude.")
-    _measure_tool("frequency", "Measure frequency", "Frequency from 50%-level crossings over all complete cycles, "
-                  "with an uncertainty estimate and the instrument's own trigger counter when available.")  # fmt: skip
+    _measure_tool(
+        "voltage", "Measure voltages", "Max, min, peak-to-peak, mean, RMS, AC RMS, top, base, amplitude."
+    )
+    _measure_tool(
+        "frequency",
+        "Measure frequency",
+        "Frequency from 50%-level crossings over all complete cycles, "
+        "with an uncertainty estimate and the instrument's own trigger counter when available.",
+    )
     _measure_tool("period", "Measure period", "Period from 50%-level crossings over all complete cycles.")
     _measure_tool("duty_cycle", "Measure duty cycle", "Positive duty cycle at the 50% level.")
     _measure_tool("rise_time", "Measure rise time", "10%-90% rise time (median over complete edges).")
@@ -328,8 +420,10 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
 
     @tool(RO, "Measure phase between channels")
     async def scope_measure_phase(
-        capture_id_a: Annotated[str | None, Field(description="Reference record (e.g. CH1); omit both ids to "
-                                                  "capture CH1+CH2 together")] = None,  # fmt: skip
+        capture_id_a: Annotated[
+            str | None,
+            Field(description="Reference record (e.g. CH1); omit both ids to capture CH1+CH2 together"),
+        ] = None,
         capture_id_b: Annotated[str | None, Field(description="Second record (e.g. CH2)")] = None,
         acquire_mode: Mode = "single",
     ) -> dict[str, Any]:
@@ -346,8 +440,9 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
     ) -> dict[str, Any]:
         """Delay from A's edges to B's next same-slope edges at each record's 50% level (median), with the sample
         interval as resolution. Requires records from the same acquisition."""
-        return await call("scope_measure_channel_delay", S().channel_delay, capture_id_a, capture_id_b, slope,
-                          acquire_mode)  # fmt: skip
+        return await call(
+            "scope_measure_channel_delay", S().channel_delay, capture_id_a, capture_id_b, slope, acquire_mode
+        )
 
     # ---------------------------------------------------------------- signal processing
     @tool(RO, "FFT spectrum")
@@ -357,13 +452,21 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
         window: Literal["hann", "hamming", "blackman", "blackmanharris", "flattop", "rectangular"] = "hann",
         detrend: Literal["none", "mean", "linear"] = "mean",
         scaling: Literal["peak", "rms"] = "peak",
-        max_points: Annotated[int, Field(ge=16, le=5000, description="Maximum spectrum points returned "
-                                         "(block-maximum decimation keeps peaks)")] = 512,  # fmt: skip
+        max_points: Annotated[
+            int,
+            Field(
+                ge=16,
+                le=5000,
+                description="Maximum spectrum points returned (block-maximum decimation keeps peaks)",
+            ),
+        ] = 512,
         n_peaks: Annotated[int, Field(ge=1, le=50)] = 8,
     ) -> dict[str, Any]:
         """Windowed, detrended single-sided amplitude spectrum with bin width, ENBW, interpolated peaks and
         harmonic/THD analysis of the strongest tone."""
-        return await call("scope_fft", S().fft, capture_id, channel, window, detrend, scaling, max_points, n_peaks)
+        return await call(
+            "scope_fft", S().fft, capture_id, channel, window, detrend, scaling, max_points, n_peaks
+        )
 
     @tool(RO, "Spectrum peaks")
     async def scope_spectrum_peaks(
@@ -374,17 +477,22 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
         min_relative_db: Annotated[float, Field(ge=-200, le=0)] = -60.0,
     ) -> dict[str, Any]:
         """The strongest spectral components (frequency, amplitude, dB relative to the largest)."""
-        return await call("scope_spectrum_peaks", S().spectrum_peaks, capture_id, channel, n_peaks, window,
-                          min_relative_db)  # fmt: skip
+        return await call(
+            "scope_spectrum_peaks", S().spectrum_peaks, capture_id, channel, n_peaks, window, min_relative_db
+        )
 
     @tool(RO, "Cross-correlation")
     async def scope_cross_correlation(
         capture_id_a: str | None = None,
         capture_id_b: str | None = None,
-        max_lag_s: Annotated[float | None, Field(gt=0, description="Only search lags within ±max_lag_s")] = None,
+        max_lag_s: Annotated[
+            float | None, Field(gt=0, description="Only search lags within ±max_lag_s")
+        ] = None,
     ) -> dict[str, Any]:
         """Lag of B relative to A from the normalised cross-correlation peak (omit ids to capture both channels)."""
-        return await call("scope_cross_correlation", S().cross_correlation, capture_id_a, capture_id_b, max_lag_s)
+        return await call(
+            "scope_cross_correlation", S().cross_correlation, capture_id_a, capture_id_b, max_lag_s
+        )
 
     @tool(RO, "Compare two captures")
     async def scope_compare_captures(capture_id_a: CaptureId, capture_id_b: CaptureId) -> dict[str, Any]:
@@ -412,8 +520,17 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
         max_pulses: Annotated[int, Field(ge=1, le=2000)] = 200,
     ) -> dict[str, Any]:
         """Complete pulses with start time and width, optionally filtered by width, plus width statistics."""
-        return await call("scope_detect_pulses", S().pulses, capture_id, channel, polarity, level, min_width_s,
-                          max_width_s, max_pulses)  # fmt: skip
+        return await call(
+            "scope_detect_pulses",
+            S().pulses,
+            capture_id,
+            channel,
+            polarity,
+            level,
+            min_width_s,
+            max_width_s,
+            max_pulses,
+        )
 
     # ---------------------------------------------------------------- data & export
     @tool(RO, "List captures")
@@ -435,8 +552,10 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
     async def scope_get_samples(
         capture_id: CaptureId,
         max_points: Annotated[int, Field(ge=2, le=5000, description="Upper bound on returned points")] = 1000,
-        method: Annotated[Literal["minmax", "stride", "mean"], Field(description="minmax keeps per-block extremes "
-                                                                     "(envelope)")] = "minmax",  # fmt: skip
+        method: Annotated[
+            Literal["minmax", "stride", "mean"],
+            Field(description="minmax keeps per-block extremes (envelope)"),
+        ] = "minmax",
     ) -> dict[str, Any]:
         """Bounded, explicitly decimated view of a record (time, raw counts, volts). Not for timing analysis."""
         return await call("scope_get_samples", S().get_samples, capture_id, max_points, method)
@@ -449,28 +568,39 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
         start_time_s: Annotated[float | None, Field(description="Alternative to start_index")] = None,
     ) -> dict[str, Any]:
         """Undecimated contiguous samples from a record (bounded count)."""
-        return await call("scope_get_sample_window", S().get_sample_window, capture_id, start_index, count,
-                          start_time_s)  # fmt: skip
+        return await call(
+            "scope_get_sample_window", S().get_sample_window, capture_id, start_index, count, start_time_s
+        )
 
     @tool(SET, "Export capture as CSV")
-    async def scope_export_csv(capture_id: CaptureId, name: ExportName = None, overwrite: bool = False) -> dict[str, Any]:
+    async def scope_export_csv(
+        capture_id: CaptureId, name: ExportName = None, overwrite: bool = False
+    ) -> dict[str, Any]:
         """Write the complete record (index, time_s, raw_counts, voltage_v + metadata header) as CSV."""
         return await call("scope_export_csv", S().export, capture_id, "csv", name, overwrite)
 
     @tool(SET, "Export capture as NPZ")
-    async def scope_export_npz(capture_id: CaptureId, name: ExportName = None, overwrite: bool = False) -> dict[str, Any]:
+    async def scope_export_npz(
+        capture_id: CaptureId, name: ExportName = None, overwrite: bool = False
+    ) -> dict[str, Any]:
         """Write the complete record as a NumPy .npz (raw_samples, time_s, voltage_v, metadata_json)."""
         return await call("scope_export_npz", S().export, capture_id, "npz", name, overwrite)
 
     @tool(RO, "List export files")
     async def scope_list_exports() -> dict[str, Any]:
         """Files in the export directory."""
-        return await call("scope_list_exports", lambda: S()._env({"exports": S().store.list_exports(),
-                                                                   "export_directory": str(S().store.export_dir)}))  # fmt: skip
+        return await call(
+            "scope_list_exports",
+            lambda: S()._env(
+                {"exports": S().store.list_exports(), "export_directory": str(S().store.export_dir)}
+            ),
+        )
 
     @tool(ACQ, "Reload an exported capture")
     async def scope_import_export(
-        name: Annotated[str, Field(max_length=100, description="File name in the export directory (.csv or .npz)")],
+        name: Annotated[
+            str, Field(max_length=100, description="File name in the export directory (.csv or .npz)")
+        ],
     ) -> dict[str, Any]:
         """Reload a previously exported CSV/NPZ file into the capture store (returns a capture id)."""
 
@@ -501,16 +631,26 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
             structured_content=meta,
         )
 
-    app.add_tool(scope_capture_screenshot, name="scope_capture_screenshot", title="Screenshot (display image)",
-                 annotations=ACQ, structured_output=False)  # fmt: skip
+    app.add_tool(
+        scope_capture_screenshot,
+        name="scope_capture_screenshot",
+        title="Screenshot (display image)",
+        annotations=ACQ,
+        structured_output=False,
+    )
 
     # ---------------------------------------------------------------- automation
     @tool(ACQ, "Autoset")
     async def scope_autoset(
         channel: Channel = 1,
-        method: Annotated[Literal["software", "instrument"], Field(description="software: iterative, measurement-"
-                          "driven adjustment of V/div, offset, timebase and trigger with read-back of every change; "
-                          "instrument: press the scope's own AUTOSET key")] = "software",  # fmt: skip
+        method: Annotated[
+            Literal["software", "instrument"],
+            Field(
+                description="software: iterative, measurement-"
+                "driven adjustment of V/div, offset, timebase and trigger with read-back of every change; "
+                "instrument: press the scope's own AUTOSET key"
+            ),
+        ] = "software",
         max_iterations: Annotated[int, Field(ge=1, le=12)] = 6,
         target_cycles: Annotated[float, Field(ge=1, le=50, description="Cycles to fit in the record")] = 4.0,
     ) -> dict[str, Any]:
@@ -527,22 +667,35 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
     @tool(ACQ, "Measure repeatedly")
     async def scope_measure_repeatedly(
         channel: Channel,
-        metrics: Annotated[list[Metric], Field(min_length=1, max_length=10)],  # type: ignore[valid-type]
-        count: Annotated[int, Field(ge=1, le=10000, description="Repetitions (bounded by limits.max_repeat_count)")] = 10,
+        metrics: Annotated[list[Metric], Field(min_length=1, max_length=10)],
+        count: Annotated[
+            int, Field(ge=1, le=10000, description="Repetitions (bounded by limits.max_repeat_count)")
+        ] = 10,
         interval_s: Annotated[float, Field(ge=0, le=60)] = 0.0,
         mode: Mode = "single",
         timeout_s: Timeout = 5.0,
-        keep_captures: Annotated[bool, Field(description="Store every capture (default: only the last)")] = False,
+        keep_captures: Annotated[
+            bool, Field(description="Store every capture (default: only the last)")
+        ] = False,
     ) -> dict[str, Any]:
         """Repeat capture+measure and return per-metric statistics, stale-record count and values. Bounded and
         abortable with scope_abort."""
-        return await call("scope_measure_repeatedly", S().measure_repeatedly, channel, list(metrics), count,
-                          interval_s, mode, timeout_s, keep_captures)  # fmt: skip
+        return await call(
+            "scope_measure_repeatedly",
+            S().measure_repeatedly,
+            channel,
+            list(metrics),
+            count,
+            interval_s,
+            mode,
+            timeout_s,
+            keep_captures,
+        )
 
     @tool(ACQ, "Acquire until condition")
     async def scope_acquire_until(
         channel: Channel,
-        metric: Metric,  # type: ignore[valid-type]
+        metric: Metric,
         operator: Literal[">", ">=", "<", "<="],
         threshold: float,
         max_attempts: Annotated[int, Field(ge=1, le=10000)] = 20,
@@ -552,8 +705,18 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
     ) -> dict[str, Any]:
         """Keep acquiring until `metric operator threshold` holds (e.g. vpp > 3.3) and store the matching record.
         Useful for intermittent events. Bounded by attempts and time; abortable."""
-        return await call("scope_acquire_until", S().acquire_until, channel, metric, operator, threshold,
-                          max_attempts, timeout_s, mode, capture_timeout_s)  # fmt: skip
+        return await call(
+            "scope_acquire_until",
+            S().acquire_until,
+            channel,
+            metric,
+            operator,
+            threshold,
+            max_attempts,
+            timeout_s,
+            mode,
+            capture_timeout_s,
+        )
 
     @tool(ACQ, "Run a measurement plan")
     async def scope_run_measurement_plan(
@@ -562,8 +725,9 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
     ) -> dict[str, Any]:
         """Execute a bounded list of typed steps (settings, captures, measurements, waits). 'capture_id': '$last'
         refers to the latest capture; phase/channel_delay default to the latest capture_both_channels pair."""
-        return await call("scope_run_measurement_plan", S().run_plan, [s.model_dump() for s in steps],
-                          stop_on_error)  # fmt: skip
+        return await call(
+            "scope_run_measurement_plan", S().run_plan, [s.model_dump() for s in steps], stop_on_error
+        )
 
     @tool(ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True), "Abort")
     async def scope_abort() -> dict[str, Any]:
@@ -597,15 +761,26 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
         """Acquire the PROBE COMP signal (~5 V, 1 kHz square; connect the probe first and set the matching
         attenuation) and check frequency and amplitude against tolerances. Suggests, never applies, scaling
         corrections."""
-        return await call("scope_run_self_test", S().self_test, channel, expected_frequency_hz, expected_vpp,
-                          frequency_tolerance_pct, vpp_tolerance_pct, mode)  # fmt: skip
+        return await call(
+            "scope_run_self_test",
+            S().self_test,
+            channel,
+            expected_frequency_hz,
+            expected_vpp,
+            frequency_tolerance_pct,
+            vpp_tolerance_pct,
+            mode,
+        )
 
     @tool(RO, "Recent errors")
     async def scope_get_recent_errors(limit: Annotated[int, Field(ge=1, le=100)] = 20) -> dict[str, Any]:
         """The most recent structured errors (code, message, operation, details)."""
         return await call("scope_get_recent_errors", S().recent_errors, limit)
 
-    @tool(ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True), "Factory default setup")
+    @tool(
+        ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True),
+        "Factory default setup",
+    )
     async def scope_default_setup(
         confirm: Annotated[bool, Field(description="Must be true: resets EVERY instrument setting")] = False,
     ) -> dict[str, Any]:
@@ -618,7 +793,9 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
         channel: Channel,
         waveform: Literal["sine", "square", "pwm", "triangle", "sawtooth", "noise", "dc", "off"],
         frequency_hz: Annotated[float, Field(gt=0, le=1e9)] = 1000.0,
-        amplitude_v: Annotated[float, Field(ge=0, le=500, description="Peak amplitude (RMS for noise)")] = 1.0,
+        amplitude_v: Annotated[
+            float, Field(ge=0, le=500, description="Peak amplitude (RMS for noise)")
+        ] = 1.0,
         offset_v: Annotated[float, Field(ge=-500, le=500)] = 0.0,
         duty_cycle: Annotated[float, Field(gt=0, lt=1)] = 0.5,
         phase_deg: Annotated[float, Field(ge=-360, le=360)] = 0.0,
@@ -633,8 +810,12 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:  # 
             svc = S()
             t = svc.controller.transport
             if not isinstance(t, SimulatedTransport):
-                raise UnsupportedOperationError("scope_set_simulated_signal is only available with the simulator")
-            spec = SignalSpec(waveform, frequency_hz, amplitude_v, offset_v, duty_cycle, phase_deg, noise_rms_v)
+                raise UnsupportedOperationError(
+                    "scope_set_simulated_signal is only available with the simulator"
+                )
+            spec = SignalSpec(
+                waveform, frequency_hz, amplitude_v, offset_v, duty_cycle, phase_deg, noise_rms_v
+            )
             try:
                 t.set_signal(channel, spec)
             except ValueError as e:

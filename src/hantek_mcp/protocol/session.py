@@ -7,6 +7,7 @@ statistics for diagnostics.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 import time
@@ -144,8 +145,9 @@ class ProtocolSession:
             if frame.command == response_command:
                 return frame
             self.stats.stray_frames += 1
-            log.warning("discarding unexpected frame 0x%02X while waiting for 0x%02X",
-                        frame.command, response_command)  # fmt: skip
+            log.warning(
+                "discarding unexpected frame 0x%02X while waiting for 0x%02X", frame.command, response_command
+            )
         raise UnexpectedResponseError(f"too many unexpected frames waiting for 0x{response_command:02X}")
 
     def flush(self) -> int:
@@ -166,7 +168,11 @@ class ProtocolSession:
             return n
 
     def transact(
-        self, command: int, payload: bytes = b"", marker: Marker = Marker.NORMAL, timeout_s: float | None = None
+        self,
+        command: int,
+        payload: bytes = b"",
+        marker: Marker = Marker.NORMAL,
+        timeout_s: float | None = None,
     ) -> Frame:
         with self._lock:
             t0 = time.monotonic()
@@ -215,10 +221,8 @@ class ProtocolSession:
         assert last is not None
         if not idempotent:
             # The instrument may or may not have executed the command; resynchronise and report.
-            try:
+            with contextlib.suppress(HantekError):
                 self.flush()
-            except HantekError:
-                pass
         raise last
 
     # -- typed requests --------------------------------------------------------------------------
@@ -256,7 +260,9 @@ class ProtocolSession:
 
         def op() -> bytes:
             tr = BulkTransfer(response_command=Command.READ_FILE | RESPONSE_FLAG)
-            self.transact_multi(Command.READ_FILE, b"\x00" + path.encode("ascii"), tr.feed, self.timeouts.default_s * 3)
+            self.transact_multi(
+                Command.READ_FILE, b"\x00" + path.encode("ascii"), tr.feed, self.timeouts.default_s * 3
+            )
             return tr.data()
 
         return self.with_retry(op, idempotent=True, what=f"read file {path}")
@@ -270,7 +276,9 @@ class ProtocolSession:
         return self.with_retry(op, idempotent=True, what="screenshot")
 
     def read_system_time(self) -> datetime:
-        f = self.with_retry(lambda: self.transact(Command.READ_SYSTEM_TIME), idempotent=True, what="read time")
+        f = self.with_retry(
+            lambda: self.transact(Command.READ_SYSTEM_TIME), idempotent=True, what="read time"
+        )
         return decode_system_time(f.payload)
 
     def set_acquisition(self, run: bool) -> None:

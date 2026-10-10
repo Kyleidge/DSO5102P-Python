@@ -44,8 +44,12 @@ class UsbConfig(_Section):
     address: int | None = None
     index: int = Field(0, ge=0, description="Which matching device to use when several are attached")
     interface: int = Field(0, ge=0)
-    endpoint_out: int | None = Field(None, description="Override bulk OUT endpoint (default: discover, expect 0x02)")
-    endpoint_in: int | None = Field(None, description="Override bulk IN endpoint (default: discover, expect 0x81)")
+    endpoint_out: int | None = Field(
+        None, description="Override bulk OUT endpoint (default: discover, expect 0x02)"
+    )
+    endpoint_in: int | None = Field(
+        None, description="Override bulk IN endpoint (default: discover, expect 0x81)"
+    )
     command_delay_s: float = Field(0.02, ge=0, le=1)
     key_press_delay_s: float = Field(0.2, ge=0, le=2, description="Settle time after each emulated key press")
     timeout_s: float = Field(2.0, gt=0, le=60)
@@ -79,6 +83,9 @@ class LimitsConfig(_Section):
     max_plan_steps: int = Field(50, ge=1, le=1000)
     max_list_items: int = Field(500, ge=1, le=100_000)
     max_trigger_wait_s: float = Field(60.0, gt=0, le=3600)
+    max_lock_wait_s: float = Field(
+        300.0, gt=0, le=3600, description="Max time an operation waits for another one to finish"
+    )
     max_key_presses_per_operation: int = Field(120, ge=1, le=2000)
 
 
@@ -153,7 +160,9 @@ def load_config(
 ) -> AppConfig:
     env = dict(os.environ if environ is None else environ)
     data: dict[str, Any] = {}
-    cfg_path = Path(path) if path else (Path(env[ENV_PREFIX + "CONFIG"]) if env.get(ENV_PREFIX + "CONFIG") else None)
+    cfg_path = (
+        Path(path) if path else (Path(env[ENV_PREFIX + "CONFIG"]) if env.get(ENV_PREFIX + "CONFIG") else None)
+    )
     if cfg_path is None and default_config_path().is_file():
         cfg_path = default_config_path()
     if cfg_path is not None:

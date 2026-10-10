@@ -168,10 +168,17 @@ def encode_png(rgb: npt.NDArray[np.uint8]) -> bytes:
     raw = b"".join(b"\x00" + rgb[y].tobytes() for y in range(h))
 
     def chunk(tag: bytes, body: bytes) -> bytes:
-        return struct.pack(">I", len(body)) + tag + body + struct.pack(">I", zlib.crc32(tag + body) & 0xFFFFFFFF)
+        return (
+            struct.pack(">I", len(body)) + tag + body + struct.pack(">I", zlib.crc32(tag + body) & 0xFFFFFFFF)
+        )
 
     ihdr = struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0)
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b"")
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(raw, 6))
+        + chunk(b"IEND", b"")
+    )
 
 
 def decode_system_time(payload: bytes) -> datetime:
@@ -192,8 +199,8 @@ def decode_system_time(payload: bytes) -> datetime:
 def parse_sys_inf(text: str) -> dict[str, str]:
     """Parse ``/sys.inf`` (``[key]value`` lines) e.g. ``[soft version]3.40.0(200217.0)``."""
     out: dict[str, str] = {}
-    for line in text.replace("\r", "").split("\n"):
-        line = line.strip()
+    for raw_line in text.replace("\r", "").split("\n"):
+        line = raw_line.strip()
         if line.startswith("[") and "]" in line:
             k, v = line[1:].split("]", 1)
             out[k.strip()] = v.strip()

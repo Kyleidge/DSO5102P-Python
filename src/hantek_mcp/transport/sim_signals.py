@@ -84,7 +84,7 @@ class SignalSpec:
             return None
         period = 1.0 / self.frequency_hz
         n = 4096
-        t = np.arange(n + 1) * (period / n)
+        t = np.arange(n + 1, dtype=np.float64) * (period / n)
         v = self.evaluate(t) - level_v
         if rising:
             idx = np.nonzero((v[:-1] < 0) & (v[1:] >= 0))[0]

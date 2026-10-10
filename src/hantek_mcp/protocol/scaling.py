@@ -129,7 +129,13 @@ def horizontal_scaling(
     )
     if seconds_per_div is None or n_samples <= 0:
         return HorizontalScaling(
-            None, None, None, trig_idx, "timebase unknown", ScalingStatus.UNAVAILABLE, ["timebase index unknown"]
+            None,
+            None,
+            None,
+            trig_idx,
+            "timebase unknown",
+            ScalingStatus.UNAVAILABLE,
+            ["timebase index unknown"],
         )
     spd: float | None = None
     method = ""
@@ -183,14 +189,22 @@ def vertical_scaling(
     cpd = calibration.counts_per_div
     if fine:
         return VerticalScaling(
-            None, position_counts, cpd, "unavailable", ScalingStatus.UNAVAILABLE,
+            None,
+            position_counts,
+            cpd,
+            "unavailable",
+            ScalingStatus.UNAVAILABLE,
             ["fine V/div is active; the exact V/div is not reported in the settings record"],
-        )  # fmt: skip
+        )
     if volts_per_div is None or probe is None:
         return VerticalScaling(
-            None, position_counts, cpd, "unavailable", ScalingStatus.UNAVAILABLE,
+            None,
+            position_counts,
+            cpd,
+            "unavailable",
+            ScalingStatus.UNAVAILABLE,
             ["V/div or probe index not recognised"],
-        )  # fmt: skip
+        )
     if coupling == "GND":
         notes.append("channel coupling is GND: input is grounded")
     if inverted:
@@ -201,9 +215,7 @@ def vertical_scaling(
         else (ScalingStatus.VERIFIED if calibration.voltage_verified else ScalingStatus.NOMINAL_UNVERIFIED)
     )
     if status == ScalingStatus.NOMINAL_UNVERIFIED:
-        notes.append(
-            f"nominal {cpd:g} counts/div and offset subtraction are not yet validated on a DSO5102P"
-        )
+        notes.append(f"nominal {cpd:g} counts/div and offset subtraction are not yet validated on a DSO5102P")
     return VerticalScaling(
         volts_per_count=volts_per_div * probe / cpd,
         offset_counts=position_counts,

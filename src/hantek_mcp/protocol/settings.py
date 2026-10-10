@@ -350,7 +350,9 @@ def _g(raw: dict[str, int], name: str, default: int = 0) -> int:
     return int(raw.get(name, default))
 
 
-def interpret_settings(raw: dict[str, int], layout_source: str = "unknown", trailing: int = 0) -> ScopeSettings:
+def interpret_settings(
+    raw: dict[str, int], layout_source: str = "unknown", trailing: int = 0
+) -> ScopeSettings:
     channels: dict[int, ChannelState] = {}
     for ch in (1, 2):
         p = f"VERT-CH{ch}-"

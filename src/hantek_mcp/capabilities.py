@@ -27,26 +27,65 @@ from hantek_mcp.protocol.settings import (
 )
 
 FEATURES: dict[str, dict[str, str]] = {
-    "usb_frame_protocol": {"status": "hardware_confirmed", "note": "upstream Echo/ReadSystemTime/KeyTrigger/Screenshot worked on a DSO5102P"},
-    "settings_readback": {"status": "awaiting_hardware", "note": "upstream marked ReadSettings 'implemented, not tested'; layout from the DSO5102P's own protocol.inf"},
-    "waveform_download": {"status": "awaiting_hardware", "note": "framing agrees in upstream, dsoc-extended and elinux; untested on DSO5102P by upstream"},
-    "voltage_scaling": {"status": "awaiting_hardware", "note": "nominal 25 counts/div model; flagged nominal_unverified in every capture"},
-    "time_scaling": {"status": "awaiting_hardware", "note": "memory_depth/20 samples/div model; flagged nominal_unverified"},
-    "single_sequence_freshness": {"status": "awaiting_hardware", "note": "relies on TRIG-STATE enumeration from dsoc-extended"},
-    "channel_controls_key_emulation": {"status": "awaiting_hardware", "note": "keycodes match the DSO5102P keyprotocol.inf; soft-menu F-key mapping from DSO5202B"},
+    "usb_frame_protocol": {
+        "status": "hardware_confirmed",
+        "note": "upstream Echo/ReadSystemTime/KeyTrigger/Screenshot worked on a DSO5102P",
+    },
+    "settings_readback": {
+        "status": "awaiting_hardware",
+        "note": "upstream marked ReadSettings 'implemented, not tested'; layout from the DSO5102P's own protocol.inf",
+    },
+    "waveform_download": {
+        "status": "awaiting_hardware",
+        "note": "framing agrees in upstream, dsoc-extended and elinux; untested on DSO5102P by upstream",
+    },
+    "voltage_scaling": {
+        "status": "awaiting_hardware",
+        "note": "nominal 25 counts/div model; flagged nominal_unverified in every capture",
+    },
+    "time_scaling": {
+        "status": "awaiting_hardware",
+        "note": "memory_depth/20 samples/div model; flagged nominal_unverified",
+    },
+    "single_sequence_freshness": {
+        "status": "awaiting_hardware",
+        "note": "relies on TRIG-STATE enumeration from dsoc-extended",
+    },
+    "channel_controls_key_emulation": {
+        "status": "awaiting_hardware",
+        "note": "keycodes match the DSO5102P keyprotocol.inf; soft-menu F-key mapping from DSO5202B",
+    },
     "trigger_controls_key_emulation": {"status": "awaiting_hardware", "note": "edge trigger menu only"},
-    "direct_settings_write": {"status": "awaiting_hardware", "note": "command 0x11 documented on elinux; disabled unless control.settings_write_mode=direct_write_experimental"},
-    "screenshot": {"status": "hardware_confirmed", "note": "upstream decoded 800x480x16-bit on a DSO5102P; RGB565 colour decode is new"},
+    "direct_settings_write": {
+        "status": "awaiting_hardware",
+        "note": "command 0x11 documented on elinux; disabled unless control.settings_write_mode=direct_write_experimental",
+    },
+    "screenshot": {
+        "status": "hardware_confirmed",
+        "note": "upstream decoded 800x480x16-bit on a DSO5102P; RGB565 colour decode is new",
+    },
     "run_stop": {"status": "hardware_confirmed", "note": "upstream Test1.py Start/StopAcquisition"},
     "panel_lock": {"status": "hardware_confirmed", "note": "upstream Test1.py Lock/UnLockControlPanel"},
-    "measurements_fft_timing": {"status": "simulation_tested", "note": "computed in software from downloaded samples"},
+    "measurements_fft_timing": {
+        "status": "simulation_tested",
+        "note": "computed in software from downloaded samples",
+    },
     "simulator": {"status": "simulation_tested", "note": "protocol-level simulator"},
     "remote_shell": {"status": "unsupported", "note": "removed for safety (could brick the instrument)"},
     "file_write_firmware_calibration": {"status": "unsupported", "note": "never exposed"},
-    "math_ref_fft_channels_download": {"status": "unsupported", "note": "protocol only exposes CH1/CH2 (elinux)"},
-    "non_edge_trigger_types": {"status": "unsupported", "note": "menu layout differs; settings are reported read-only"},
-    "continuous_streaming": {"status": "unsupported", "note": "the protocol only downloads stored records; repeated capture is offered instead"},
-}  # fmt: skip
+    "math_ref_fft_channels_download": {
+        "status": "unsupported",
+        "note": "protocol only exposes CH1/CH2 (elinux)",
+    },
+    "non_edge_trigger_types": {
+        "status": "unsupported",
+        "note": "menu layout differs; settings are reported read-only",
+    },
+    "continuous_streaming": {
+        "status": "unsupported",
+        "note": "the protocol only downloads stored records; repeated capture is offered instead",
+    },
+}
 
 SAFETY = {
     "input_impedance": "1 MΩ ±2% || 20 pF ±3 pF",

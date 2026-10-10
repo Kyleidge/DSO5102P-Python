@@ -19,7 +19,7 @@ def record_quality(raw: npt.NDArray[np.int8], identical_to_previous: bool | None
     r = raw.astype(np.int16)
     hi = int(np.count_nonzero(r >= CLIP_HIGH))
     lo = int(np.count_nonzero(r <= CLIP_LOW))
-    ptp = int(r.max() - r.min())
+    ptp = int(np.max(r) - np.min(r))
     clipped = (hi + lo) >= 2 and (hi + lo) / n > 0.001
     utilisation = ptp / ADC_SPAN
     warnings: list[str] = []
@@ -29,7 +29,9 @@ def record_quality(raw: npt.NDArray[np.int8], identical_to_previous: bool | None
             "invalid; increase V/div or adjust the offset"
         )
     if ptp <= 2:
-        warnings.append("record is flat (<= 2 ADC counts peak-to-peak): no signal, GND coupling or V/div too large")
+        warnings.append(
+            "record is flat (<= 2 ADC counts peak-to-peak): no signal, GND coupling or V/div too large"
+        )
     elif utilisation < 0.1:
         warnings.append(
             f"signal uses only {utilisation:.0%} of the ADC range: resolution is poor; decrease V/div"
@@ -41,8 +43,8 @@ def record_quality(raw: npt.NDArray[np.int8], identical_to_previous: bool | None
         )
     return {
         "sample_count": n,
-        "raw_min": int(r.min()),
-        "raw_max": int(r.max()),
+        "raw_min": int(np.min(r)),
+        "raw_max": int(np.max(r)),
         "raw_peak_to_peak_counts": ptp,
         "adc_utilisation": round(utilisation, 4),
         "clipped": bool(clipped),

@@ -43,8 +43,14 @@ def normalise_source(source: str) -> str:
 
 def normalise_trigger_coupling(c: str) -> str:
     key = c.strip().upper().replace(" ", "_").replace("-", "_")
-    aliases = {"NOISE": "NOISE_REJECT", "NOISEREJ": "NOISE_REJECT", "HF": "HF_REJECT", "HFREJ": "HF_REJECT",
-               "LF": "LF_REJECT", "LFREJ": "LF_REJECT"}  # fmt: skip
+    aliases = {
+        "NOISE": "NOISE_REJECT",
+        "NOISEREJ": "NOISE_REJECT",
+        "HF": "HF_REJECT",
+        "HFREJ": "HF_REJECT",
+        "LF": "LF_REJECT",
+        "LFREJ": "LF_REJECT",
+    }
     key = aliases.get(key, key)
     if key not in TRIGGER_COUPLINGS:
         raise ParameterError(f"trigger coupling must be one of {list(TRIGGER_COUPLINGS)}")
@@ -99,8 +105,15 @@ class TriggerControlMixin(ChannelControlMixin):
                     n = (table.index(value) - cur) % len(table)
                     presses += self.press(s, Key.TRIG_MENU)
                     presses += self.press(s, key, n)
-            return self.verify(s, f"trigger.{what}", value, prev, lambda x: getattr(x.trigger, what),
-                               self.write_method, presses)  # fmt: skip
+            return self.verify(
+                s,
+                f"trigger.{what}",
+                value,
+                prev,
+                lambda x: getattr(x.trigger, what),
+                self.write_method,
+                presses,
+            )
 
     def set_trigger_source(self, source: str) -> SettingResult:
         return self._set_trigger_menu("source", normalise_source(source))
@@ -127,7 +140,9 @@ class TriggerControlMixin(ChannelControlMixin):
             self._require_edge(st)
             src = st.trigger.source
             if src not in ("CH1", "CH2"):
-                raise UnsupportedOperationError(f"absolute trigger level is only supported for CH1/CH2 (source {src})")
+                raise UnsupportedOperationError(
+                    f"absolute trigger level is only supported for CH1/CH2 (source {src})"
+                )
             ch = st.channels[1 if src == "CH1" else 2]
             vpd = ch.effective_volts_per_div
             if vpd is None:
@@ -146,10 +161,24 @@ class TriggerControlMixin(ChannelControlMixin):
             elif target == 0:
                 presses += self.press(s, Key.TRIG_LEVEL_ZERO)
             else:
-                presses += self._converge(s, lambda x: x.trigger.level_counts, target, 0,
-                                          Key.TRIG_LEVEL_UP, Key.TRIG_LEVEL_DOWN, "trigger level")  # fmt: skip
-            res = self.verify(s, "trigger.level_counts", target, prev, lambda x: x.trigger.level_counts,
-                              self.write_method, presses)  # fmt: skip
+                presses += self._converge(
+                    s,
+                    lambda x: x.trigger.level_counts,
+                    target,
+                    0,
+                    Key.TRIG_LEVEL_UP,
+                    Key.TRIG_LEVEL_DOWN,
+                    "trigger level",
+                )
+            res = self.verify(
+                s,
+                "trigger.level_counts",
+                target,
+                prev,
+                lambda x: x.trigger.level_counts,
+                self.write_method,
+                presses,
+            )
             res.notes = [
                 f"level quantised to {vpd / cpd:.4g} V steps; requested {volts} V -> {target * vpd / cpd:.4g} V",
                 "volts conversion uses the nominal counts/div (unverified on DSO5102P)",
@@ -162,9 +191,16 @@ class TriggerControlMixin(ChannelControlMixin):
             prev = st.trigger.level_counts
             presses = self.press(s, Key.TRIG_LEVEL_50)
             new = self._refresh_settings(s).trigger.level_counts
-            return SettingResult("trigger.level_counts", "50%", prev, new, "front_panel_key_emulation",
-                                 "readback_reported", presses,
-                                 ["instrument's 'set to 50%' (manual: works for signals >= 50 Hz)"])  # fmt: skip
+            return SettingResult(
+                "trigger.level_counts",
+                "50%",
+                prev,
+                new,
+                "front_panel_key_emulation",
+                "readback_reported",
+                presses,
+                ["instrument's 'set to 50%' (manual: works for signals >= 50 Hz)"],
+            )
 
     def force_trigger(self) -> dict[str, Any]:
         with self.operation("force_trigger") as s:

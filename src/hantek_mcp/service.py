@@ -30,29 +30,55 @@ from hantek_mcp.capabilities import capabilities
 from hantek_mcp.config import AppConfig
 from hantek_mcp.errors import (
     AbortedError,
+    DeviceBusyError,
     HantekError,
     LimitExceededError,
     ParameterError,
     ScalingUnavailableError,
-    UnsupportedOperationError,
 )
 from hantek_mcp.instrument.controller import ScopeController
 from hantek_mcp.instrument.core import TransportFactory
 from hantek_mcp.models import Freshness, WaveformCapture, utcnow
 from hantek_mcp.protocol.decoder import encode_png
-from hantek_mcp.protocol.settings import DSO5102P_TB_RANGE, DSO5102P_VB_RANGE, TIMEBASE_S_PER_DIV, VOLTS_PER_DIV
+from hantek_mcp.protocol.settings import (
+    DSO5102P_TB_RANGE,
+    DSO5102P_VB_RANGE,
+    TIMEBASE_S_PER_DIV,
+    VOLTS_PER_DIV,
+)
 from hantek_mcp.storage.captures import CaptureStore
 
 log = logging.getLogger(__name__)
 
 MEASUREMENTS = (
-    "voltage", "frequency", "period", "duty_cycle", "rise_time", "fall_time", "rms", "peak_to_peak", "noise",
-)  # fmt: skip
-CONDITION_METRICS = ("vpp", "vmax", "vmin", "mean", "rms", "frequency", "duty_cycle", "edge_count",
-                     "pulse_width_max", "pulse_width_min")  # fmt: skip
+    "voltage",
+    "frequency",
+    "period",
+    "duty_cycle",
+    "rise_time",
+    "fall_time",
+    "rms",
+    "peak_to_peak",
+    "noise",
+)
+CONDITION_METRICS = (
+    "vpp",
+    "vmax",
+    "vmin",
+    "mean",
+    "rms",
+    "frequency",
+    "duty_cycle",
+    "edge_count",
+    "pulse_width_max",
+    "pulse_width_min",
+)
 _OPS: dict[str, Callable[[float, float], bool]] = {
-    ">": operator.gt, ">=": operator.ge, "<": operator.lt, "<=": operator.le,
-}  # fmt: skip
+    ">": operator.gt,
+    ">=": operator.ge,
+    "<": operator.lt,
+    "<=": operator.le,
+}
 
 
 def _f(x: Any) -> Any:
@@ -95,9 +121,16 @@ class ScopeService:
         out.update(payload)
         return _f(out)  # type: ignore[no-any-return]
 
-    def record_tool_call(self, tool: str, ok: bool, duration_ms: float, error_code: str | None = None) -> None:
-        entry = {"time_utc": utcnow().isoformat(), "tool": tool, "ok": ok, "duration_ms": round(duration_ms, 1),
-                 "error_code": error_code}  # fmt: skip
+    def record_tool_call(
+        self, tool: str, ok: bool, duration_ms: float, error_code: str | None = None
+    ) -> None:
+        entry = {
+            "time_utc": utcnow().isoformat(),
+            "tool": tool,
+            "ok": ok,
+            "duration_ms": round(duration_ms, 1),
+            "error_code": error_code,
+        }
         self.tool_activity.append(entry)
         self.controller.emit("mcp_call", **entry)
 
@@ -108,27 +141,29 @@ class ScopeService:
 
     def capture_brief(self, c: WaveformCapture) -> dict[str, Any]:
         m = c.metadata()
-        return _f({  # type: ignore[no-any-return]
-            "capture_id": c.capture_id,
-            "channel": c.channel,
-            "simulated": c.simulated,
-            "source": str(c.source),
-            "timestamp_utc": m["timestamp_utc"],
-            "sample_count": c.sample_count,
-            "sample_rate_hz": c.sample_rate_hz,
-            "sample_interval_s": c.sample_interval_s,
-            "record_duration_s": m["record_duration_s"],
-            "voltage_scaling_status": c.voltage_status,
-            "time_scaling_status": c.time_status,
-            "volts_per_div": c.channel_settings.get("volts_per_div_at_probe_tip"),
-            "seconds_per_div": c.timebase_settings.get("seconds_per_div"),
-            "freshness": str(c.acquisition.freshness),
-            "trigger_observed": c.acquisition.trigger_observed,
-            "group_id": c.acquisition.group_id,
-            "simultaneity": c.acquisition.simultaneity,
-            "quality": {k: v for k, v in c.quality.items() if k != "warnings"},
-            "warnings": c.warnings,
-        })
+        return _f(  # type: ignore[no-any-return]
+            {
+                "capture_id": c.capture_id,
+                "channel": c.channel,
+                "simulated": c.simulated,
+                "source": str(c.source),
+                "timestamp_utc": m["timestamp_utc"],
+                "sample_count": c.sample_count,
+                "sample_rate_hz": c.sample_rate_hz,
+                "sample_interval_s": c.sample_interval_s,
+                "record_duration_s": m["record_duration_s"],
+                "voltage_scaling_status": c.voltage_status,
+                "time_scaling_status": c.time_status,
+                "volts_per_div": c.channel_settings.get("volts_per_div_at_probe_tip"),
+                "seconds_per_div": c.timebase_settings.get("seconds_per_div"),
+                "freshness": str(c.acquisition.freshness),
+                "trigger_observed": c.acquisition.trigger_observed,
+                "group_id": c.acquisition.group_id,
+                "simultaneity": c.acquisition.simultaneity,
+                "quality": {k: v for k, v in c.quality.items() if k != "warnings"},
+                "warnings": c.warnings,
+            }
+        )
 
     # -- connection / identity -------------------------------------------------------------------
 
@@ -141,15 +176,19 @@ class ScopeService:
 
     def status(self) -> dict[str, Any]:
         st = self.controller.status()
-        st.update({
-            "service_version": __version__,
-            "started_at_utc": self.started_at,
-            "captures_stored": len(self.store),
-            "workflow_active": self.controller.active_workflow,
-        })  # fmt: skip
+        st.update(
+            {
+                "service_version": __version__,
+                "started_at_utc": self.started_at,
+                "captures_stored": len(self.store),
+                "workflow_active": self.controller.active_workflow,
+            }
+        )
         if self.controller.is_connected:
-            try:
-                st["acquisition"] = self.controller.acquisition_state()
+            try:  # never block behind a long-running capture: status must stay responsive
+                st["acquisition"] = self.controller.acquisition_state(wait_s=0.25)
+            except DeviceBusyError:
+                st["acquisition"] = {"note": "instrument busy; trigger_state above is the last value read"}
             except HantekError as e:
                 st["acquisition_error"] = e.to_dict()
         return self._env(st)
@@ -175,7 +214,7 @@ class ScopeService:
         if c.is_connected:
             t0 = time.monotonic()
             try:
-                with c.operation("health_echo") as s:
+                with c.operation("health_echo", wait_s=1.0) as s:
                     s.echo(b"health")
                 out["echo_round_trip_ms"] = round((time.monotonic() - t0) * 1000, 2)
                 out["echo_ok"] = True
@@ -184,16 +223,23 @@ class ScopeService:
                 out["echo_error"] = e.to_dict()
         if c.session:
             stats = c.session.stats
-            out["protocol_errors"] = {"timeouts": stats.timeouts, "checksum_errors": stats.checksum_errors,
-                                      "framing_errors": stats.framing_errors, "retries": stats.retries}  # fmt: skip
+            out["protocol_errors"] = {
+                "timeouts": stats.timeouts,
+                "checksum_errors": stats.checksum_errors,
+                "framing_errors": stats.framing_errors,
+                "retries": stats.retries,
+            }
         try:
             du = shutil.disk_usage(self.store.root)
             out["data_dir_free_mb"] = round(du.free / 2**20, 1)
         except OSError:
             out["data_dir_free_mb"] = None
-        out["capture_store"] = {"count": len(self.store), "disk_mb": round(self.store.disk_bytes / 2**20, 3),
-                                "max_captures": self.store.max_captures,
-                                "max_disk_mb": self.config.storage.max_disk_mb}  # fmt: skip
+        out["capture_store"] = {
+            "count": len(self.store),
+            "disk_mb": round(self.store.disk_bytes / 2**20, 3),
+            "max_captures": self.store.max_captures,
+            "max_disk_mb": self.config.storage.max_disk_mb,
+        }
         out["recent_errors"] = len(c.recent_errors)
         return self._env(out)
 
@@ -266,19 +312,32 @@ class ScopeService:
         return self._env(self.controller.acquisition_state())
 
     def capture(
-        self, channel: int, mode: str = "single", timeout_s: float = 5.0, force_on_timeout: bool = False,
+        self,
+        channel: int,
+        mode: str = "single",
+        timeout_s: float = 5.0,
+        force_on_timeout: bool = False,
         label: str | None = None,
-    ) -> dict[str, Any]:  # fmt: skip
+    ) -> dict[str, Any]:
         caps = self.controller.capture_channels([channel], mode, timeout_s, force_on_timeout, True, label)
         return self._env({"capture": self._store(caps)[0]})
 
     def capture_both(
-        self, mode: str = "single", timeout_s: float = 5.0, force_on_timeout: bool = False, label: str | None = None
+        self,
+        mode: str = "single",
+        timeout_s: float = 5.0,
+        force_on_timeout: bool = False,
+        label: str | None = None,
     ) -> dict[str, Any]:
         caps = self.controller.capture_channels([1, 2], mode, timeout_s, force_on_timeout, True, label)
         briefs = self._store(caps)
-        return self._env({"captures": briefs, "group_id": caps[0].acquisition.group_id,
-                          "simultaneity": caps[0].acquisition.simultaneity})  # fmt: skip
+        return self._env(
+            {
+                "captures": briefs,
+                "group_id": caps[0].acquisition.group_id,
+                "simultaneity": caps[0].acquisition.simultaneity,
+            }
+        )
 
     def _resolve(self, capture_id: str | None, channel: int | None, mode: str = "single") -> WaveformCapture:
         if capture_id:
@@ -290,7 +349,9 @@ class ScopeService:
         return caps[0]
 
     @staticmethod
-    def _data(c: WaveformCapture, need_volts: bool, require_verified: bool) -> tuple[npt.NDArray[np.float64], str, list[str]]:
+    def _data(
+        c: WaveformCapture, need_volts: bool, require_verified: bool
+    ) -> tuple[npt.NDArray[np.float64], str, list[str]]:
         notes: list[str] = []
         if c.voltage_v is None:
             if require_verified:
@@ -306,8 +367,15 @@ class ScopeService:
             notes.append("volts use the nominal, not yet hardware-verified, scaling model")
         return c.voltage_v, "V", notes
 
-    def _envelope(self, c: WaveformCapture, name: str, extra_warnings: list[str], details: dict[str, Any],
-                  amplitude_based: bool, timing_based: bool) -> dict[str, Any]:  # fmt: skip
+    def _envelope(
+        self,
+        c: WaveformCapture,
+        name: str,
+        extra_warnings: list[str],
+        details: dict[str, Any],
+        amplitude_based: bool,
+        timing_based: bool,
+    ) -> dict[str, Any]:
         warnings = list(extra_warnings)
         valid = True
         q = c.quality
@@ -328,19 +396,21 @@ class ScopeService:
             warnings.append("time scaling unavailable: timing results are in samples")
         if c.simulated:
             warnings.insert(0, "SIMULATED DATA")
-        return self._env({
-            "measurement": name,
-            "valid": valid,
-            "capture_id": c.capture_id,
-            "channel": c.channel,
-            "sample_count": c.sample_count,
-            "sample_interval_s": c.sample_interval_s,
-            "voltage_scaling_status": c.voltage_status,
-            "time_scaling_status": c.time_status,
-            "freshness": str(c.acquisition.freshness),
-            "results": details,
-            "warnings": warnings,
-        })
+        return self._env(
+            {
+                "measurement": name,
+                "valid": valid,
+                "capture_id": c.capture_id,
+                "channel": c.channel,
+                "sample_count": c.sample_count,
+                "sample_interval_s": c.sample_interval_s,
+                "voltage_scaling_status": c.voltage_status,
+                "time_scaling_status": c.time_status,
+                "freshness": str(c.acquisition.freshness),
+                "results": details,
+                "warnings": warnings,
+            }
+        )
 
     def measure(
         self,
@@ -362,11 +432,21 @@ class ScopeService:
                 amp = True
                 s = meas.voltage_stats(y)
                 if kind == "rms":
-                    d: dict[str, Any] = {"rms": s["rms"], "ac_rms": s["ac_rms"], "mean": s["mean"], "unit": unit,
-                                         "method": "sqrt(mean(v^2)) over the whole record; ac_rms = std"}  # fmt: skip
+                    d: dict[str, Any] = {
+                        "rms": s["rms"],
+                        "ac_rms": s["ac_rms"],
+                        "mean": s["mean"],
+                        "unit": unit,
+                        "method": "sqrt(mean(v^2)) over the whole record; ac_rms = std",
+                    }
                 elif kind == "peak_to_peak":
-                    d = {"peak_to_peak": s["peak_to_peak"], "maximum": s["maximum"], "minimum": s["minimum"],
-                         "unit": unit, "method": "max - min over the whole record (includes noise peaks)"}  # fmt: skip
+                    d = {
+                        "peak_to_peak": s["peak_to_peak"],
+                        "maximum": s["maximum"],
+                        "minimum": s["minimum"],
+                        "unit": unit,
+                        "method": "max - min over the whole record (includes noise peaks)",
+                    }
                 else:
                     d = {**s, "unit": unit, "method": "statistics over the whole record"}
                 lsb = c.vertical.get("volts_per_count")
@@ -379,7 +459,9 @@ class ScopeService:
                 tc = c.trigger_settings.get("counter_frequency_hz")
                 if tc:
                     d["instrument_trigger_counter_hz"] = tc
-                    d["instrument_counter_note"] = "the scope's own counter on the trigger source (scale unverified)"
+                    d["instrument_counter_note"] = (
+                        "the scope's own counter on the trigger source (scale unverified)"
+                    )
             elif kind == "duty_cycle":
                 tim = True
                 d = meas.duty_cycle(y, dt)
@@ -404,7 +486,9 @@ class ScopeService:
         warnings = notes + ([d["warning"]] if "warning" in d else []) + list(d.get("warnings", []))
         return self._envelope(c, kind, warnings, d, amp, tim)
 
-    def _pair(self, capture_a: str | None, capture_b: str | None, mode: str) -> tuple[WaveformCapture, WaveformCapture, list[str]]:
+    def _pair(
+        self, capture_a: str | None, capture_b: str | None, mode: str
+    ) -> tuple[WaveformCapture, WaveformCapture, list[str]]:
         notes: list[str] = []
         if capture_a and capture_b:
             a, b = self.store.get(capture_a), self.store.get(capture_b)
@@ -426,7 +510,9 @@ class ScopeService:
             notes.append("records differ in length or sample interval")
         return a, b, notes
 
-    def phase(self, capture_a: str | None = None, capture_b: str | None = None, mode: str = "single") -> dict[str, Any]:
+    def phase(
+        self, capture_a: str | None = None, capture_b: str | None = None, mode: str = "single"
+    ) -> dict[str, Any]:
         a, b, notes = self._pair(capture_a, capture_b, mode)
         if a.sample_interval_s is None:
             raise ScalingUnavailableError("time scaling unavailable")
@@ -442,7 +528,11 @@ class ScopeService:
         return out
 
     def channel_delay(
-        self, capture_a: str | None = None, capture_b: str | None = None, slope: str = "rising", mode: str = "single"
+        self,
+        capture_a: str | None = None,
+        capture_b: str | None = None,
+        slope: str = "rising",
+        mode: str = "single",
     ) -> dict[str, Any]:
         a, b, notes = self._pair(capture_a, capture_b, mode)
         ya, _, _ = self._data(a, False, False)
@@ -461,9 +551,15 @@ class ScopeService:
     # -- signal processing -----------------------------------------------------------------------
 
     def fft(
-        self, capture_id: str | None = None, channel: int | None = None, window: str = "hann", detrend: str = "mean",
-        scaling: str = "peak", max_points: int = 1000, n_peaks: int = 8,
-    ) -> dict[str, Any]:  # fmt: skip
+        self,
+        capture_id: str | None = None,
+        channel: int | None = None,
+        window: str = "hann",
+        detrend: str = "mean",
+        scaling: str = "peak",
+        max_points: int = 1000,
+        n_peaks: int = 8,
+    ) -> dict[str, Any]:
         c = self._resolve(capture_id, channel)
         if c.sample_interval_s is None:
             raise ScalingUnavailableError("time scaling unavailable: cannot compute a frequency axis")
@@ -479,30 +575,52 @@ class ScopeService:
         f, a = fftmod.decimate_spectrum(sp, max_points)
         harm = fftmod.harmonic_analysis(sp, peaks[0]["frequency_hz"]) if peaks else None
         details = {
-            "unit": f"{unit} ({scaling})", "window": window, "detrend": detrend, "bin_width_hz": sp["bin_width_hz"],
-            "enbw_hz": sp["enbw_hz"], "nyquist_hz": sp["nyquist_hz"], "fft_length": sp["n"], "peaks": peaks,
-            "harmonics": harm, "spectrum_points": len(f), "spectrum_decimated": len(f) < sp["amplitude"].size,
-            "freqs_hz": f, "amplitude": a,
+            "unit": f"{unit} ({scaling})",
+            "window": window,
+            "detrend": detrend,
+            "bin_width_hz": sp["bin_width_hz"],
+            "enbw_hz": sp["enbw_hz"],
+            "nyquist_hz": sp["nyquist_hz"],
+            "fft_length": sp["n"],
+            "peaks": peaks,
+            "harmonics": harm,
+            "spectrum_points": len(f),
+            "spectrum_decimated": len(f) < sp["amplitude"].size,
+            "freqs_hz": f,
+            "amplitude": a,
             "limitations": [
                 "frequency resolution is limited to the bin width (peak interpolation refines tone frequencies)",
                 "the instrument's analog bandwidth is 100 MHz; components near/above Nyquist may be aliased",
             ],
-        }  # fmt: skip
+        }
         return self._envelope(c, "fft", notes, details, True, True)
 
-    def spectrum_peaks(self, capture_id: str | None = None, channel: int | None = None, n_peaks: int = 10,
-                       window: str = "hann", min_relative_db: float = -60.0) -> dict[str, Any]:  # fmt: skip
+    def spectrum_peaks(
+        self,
+        capture_id: str | None = None,
+        channel: int | None = None,
+        n_peaks: int = 10,
+        window: str = "hann",
+        min_relative_db: float = -60.0,
+    ) -> dict[str, Any]:
         c = self._resolve(capture_id, channel)
         if c.sample_interval_s is None:
             raise ScalingUnavailableError("time scaling unavailable")
         y, unit, notes = self._data(c, True, False)
         sp = fftmod.spectrum(y, c.sample_interval_s, window, "mean", "peak")
         peaks = fftmod.find_peaks(sp, min(n_peaks, 50), min_relative_db)
-        return self._envelope(c, "spectrum_peaks", notes,
-                              {"unit": f"{unit} (peak)", "bin_width_hz": sp["bin_width_hz"], "peaks": peaks}, True, True)  # fmt: skip
+        return self._envelope(
+            c,
+            "spectrum_peaks",
+            notes,
+            {"unit": f"{unit} (peak)", "bin_width_hz": sp["bin_width_hz"], "peaks": peaks},
+            True,
+            True,
+        )
 
-    def cross_correlation(self, capture_a: str | None = None, capture_b: str | None = None,
-                          max_lag_s: float | None = None) -> dict[str, Any]:  # fmt: skip
+    def cross_correlation(
+        self, capture_a: str | None = None, capture_b: str | None = None, max_lag_s: float | None = None
+    ) -> dict[str, Any]:
         a, b, notes = self._pair(capture_a, capture_b, "single")
         if a.sample_interval_s is None:
             raise ScalingUnavailableError("time scaling unavailable")
@@ -530,22 +648,41 @@ class ScopeService:
         out["capture_id_b"] = b.capture_id
         return out
 
-    def edges(self, capture_id: str | None = None, channel: int | None = None, level: float | None = None,
-              max_edges: int = 200) -> dict[str, Any]:  # fmt: skip
+    def edges(
+        self,
+        capture_id: str | None = None,
+        channel: int | None = None,
+        level: float | None = None,
+        max_edges: int = 200,
+    ) -> dict[str, Any]:
         c = self._resolve(capture_id, channel)
         y, unit, notes = self._data(c, True, False)
         d = timing.detect_edges(y, c.time_s, level, None, min(max_edges, self.config.limits.max_list_items))
         d["unit"] = unit
         return self._envelope(c, "edges", notes, d, False, True)
 
-    def pulses(self, capture_id: str | None = None, channel: int | None = None, polarity: str = "positive",
-               level: float | None = None, min_width_s: float | None = None, max_width_s: float | None = None,
-               max_pulses: int = 200) -> dict[str, Any]:  # fmt: skip
+    def pulses(
+        self,
+        capture_id: str | None = None,
+        channel: int | None = None,
+        polarity: str = "positive",
+        level: float | None = None,
+        min_width_s: float | None = None,
+        max_width_s: float | None = None,
+        max_pulses: int = 200,
+    ) -> dict[str, Any]:
         c = self._resolve(capture_id, channel)
         y, unit, notes = self._data(c, True, False)
         try:
-            d = timing.detect_pulses(y, c.time_s, polarity, level, min_width_s, max_width_s,
-                                     min(max_pulses, self.config.limits.max_list_items))  # fmt: skip
+            d = timing.detect_pulses(
+                y,
+                c.time_s,
+                polarity,
+                level,
+                min_width_s,
+                max_width_s,
+                min(max_pulses, self.config.limits.max_list_items),
+            )
         except meas.MeasurementError as e:
             raise ParameterError(str(e)) from e
         d["unit"] = unit
@@ -553,7 +690,9 @@ class ScopeService:
 
     # -- data access -----------------------------------------------------------------------------
 
-    def list_captures(self, limit: int = 50, channel: int | None = None, label: str | None = None) -> dict[str, Any]:
+    def list_captures(
+        self, limit: int = 50, channel: int | None = None, label: str | None = None
+    ) -> dict[str, Any]:
         limit = max(1, min(limit, self.config.limits.max_list_items))
         return self._env({"captures": self.store.list(limit, channel, label), "total": len(self.store)})
 
@@ -569,17 +708,31 @@ class ScopeService:
             raise ParameterError("method must be minmax, stride or mean")
         n = c.sample_count
         idx_t, raw, volts = _decimate(c, max_points, method)
-        return self._env({
-            "capture_id": c.capture_id, "channel": c.channel, "total_samples": n, "returned_points": len(idx_t),
-            "decimated": len(idx_t) < n, "decimation_method": method if len(idx_t) < n else "none",
-            "time_s": idx_t, "raw_counts": raw, "voltage_v": volts,
-            "voltage_scaling_status": c.voltage_status, "time_scaling_status": c.time_status,
-            "note": "minmax keeps each block's min and max (envelope preserving); decimated data must not be "
-                    "used for timing measurements - use the measurement tools on the full record",
-        })  # fmt: skip
+        return self._env(
+            {
+                "capture_id": c.capture_id,
+                "channel": c.channel,
+                "total_samples": n,
+                "returned_points": len(idx_t),
+                "decimated": len(idx_t) < n,
+                "decimation_method": method if len(idx_t) < n else "none",
+                "time_s": idx_t,
+                "raw_counts": raw,
+                "voltage_v": volts,
+                "voltage_scaling_status": c.voltage_status,
+                "time_scaling_status": c.time_status,
+                "note": "minmax keeps each block's min and max (envelope preserving); decimated data must not be "
+                "used for timing measurements - use the measurement tools on the full record",
+            }
+        )
 
-    def get_sample_window(self, capture_id: str, start_index: int | None = None, count: int = 500,
-                          start_time_s: float | None = None) -> dict[str, Any]:  # fmt: skip
+    def get_sample_window(
+        self,
+        capture_id: str,
+        start_index: int | None = None,
+        count: int = 500,
+        start_time_s: float | None = None,
+    ) -> dict[str, Any]:
         c = self.store.get(capture_id)
         limit = self.config.limits.max_response_samples
         if not 1 <= count <= limit:
@@ -593,22 +746,39 @@ class ScopeService:
         if not 0 <= start < c.sample_count:
             raise ParameterError(f"start is outside the record (0..{c.sample_count - 1})")
         end = min(c.sample_count, start + count)
-        return self._env({
-            "capture_id": c.capture_id, "channel": c.channel, "start_index": start, "end_index": end,
-            "total_samples": c.sample_count, "time_s": c.time_s[start:end], "raw_counts": c.raw_samples[start:end],
-            "voltage_v": None if c.voltage_v is None else c.voltage_v[start:end],
-            "voltage_scaling_status": c.voltage_status, "time_scaling_status": c.time_status,
-        })  # fmt: skip
+        return self._env(
+            {
+                "capture_id": c.capture_id,
+                "channel": c.channel,
+                "start_index": start,
+                "end_index": end,
+                "total_samples": c.sample_count,
+                "time_s": c.time_s[start:end],
+                "raw_counts": c.raw_samples[start:end],
+                "voltage_v": None if c.voltage_v is None else c.voltage_v[start:end],
+                "voltage_scaling_status": c.voltage_status,
+                "time_scaling_status": c.time_status,
+            }
+        )
 
-    def export(self, capture_id: str, fmt: str, name: str | None = None, overwrite: bool = False) -> dict[str, Any]:
+    def export(
+        self, capture_id: str, fmt: str, name: str | None = None, overwrite: bool = False
+    ) -> dict[str, Any]:
         if fmt == "csv":
             p = self.store.export_csv(capture_id, name, overwrite)
         elif fmt == "npz":
             p = self.store.export_npz(capture_id, name, overwrite)
         else:
             raise ParameterError("format must be csv or npz")
-        return self._env({"capture_id": capture_id, "format": fmt, "path": str(p), "bytes": p.stat().st_size,
-                          "export_directory": str(self.store.export_dir)})  # fmt: skip
+        return self._env(
+            {
+                "capture_id": capture_id,
+                "format": fmt,
+                "path": str(p),
+                "bytes": p.stat().st_size,
+                "export_directory": str(self.store.export_dir),
+            }
+        )
 
     def delete_capture(self, capture_id: str) -> dict[str, Any]:
         self.store.delete(capture_id)
@@ -623,9 +793,16 @@ class ScopeService:
         path = shots / name
         path.write_bytes(png)
         self._prune_dir(shots, keep=50)
-        return png, self._env({"path": str(path), "format": fmt, "width": int(rgb.shape[1]),
-                               "height": int(rgb.shape[0]), "bytes": len(png),
-                               "note": "screen image only: not waveform data; use scope_capture for samples"})  # fmt: skip
+        return png, self._env(
+            {
+                "path": str(path),
+                "format": fmt,
+                "width": int(rgb.shape[1]),
+                "height": int(rgb.shape[0]),
+                "bytes": len(png),
+                "note": "screen image only: not waveform data; use scope_capture for samples",
+            }
+        )
 
     @staticmethod
     def _prune_dir(d: Path, keep: int) -> None:
@@ -638,9 +815,15 @@ class ScopeService:
     def abort(self) -> dict[str, Any]:
         busy, wf = self.controller.busy_operation, self.controller.active_workflow
         self.controller.request_abort()
-        return self._env({"abort_requested": True, "workflow_active": wf, "busy_operation": busy,
-                          "note": "software activity stops at its next check point; an armed single "
-                                  "acquisition on the instrument itself stays armed"})  # fmt: skip
+        return self._env(
+            {
+                "abort_requested": True,
+                "workflow_active": wf,
+                "busy_operation": busy,
+                "note": "software activity stops at its next check point; an armed single "
+                "acquisition on the instrument itself stays armed",
+            }
+        )
 
     class _Workflow:
         def __init__(self, svc: ScopeService, name: str) -> None:
@@ -671,9 +854,14 @@ class ScopeService:
                 cap = self.controller.capture_channels([ch], mode, 5.0, True, True, "find_signal")[0]
                 self.store.add(cap)
                 q = cap.quality
-                entry: dict[str, Any] = {"channel": ch, "enabled": True, "capture_id": cap.capture_id,
-                                         "raw_peak_to_peak_counts": q["raw_peak_to_peak_counts"],
-                                         "clipped": q["clipped"], "flat": q["flat"]}  # fmt: skip
+                entry: dict[str, Any] = {
+                    "channel": ch,
+                    "enabled": True,
+                    "capture_id": cap.capture_id,
+                    "raw_peak_to_peak_counts": q["raw_peak_to_peak_counts"],
+                    "clipped": q["clipped"],
+                    "flat": q["flat"],
+                }
                 y, unit, _ = self._data(cap, True, False)
                 entry["peak_to_peak"] = float(np.ptp(y))
                 entry["mean"] = float(np.mean(y))
@@ -682,12 +870,15 @@ class ScopeService:
                     entry["frequency_hz_est"] = meas.frequency(y, cap.sample_interval_s).get("frequency_hz")
                 except meas.MeasurementError:
                     entry["frequency_hz_est"] = None
-                entry["activity"] = "none/flat" if q["flat"] else ("clipped" if q["clipped"] else "signal present")
+                entry["activity"] = (
+                    "none/flat" if q["flat"] else ("clipped" if q["clipped"] else "signal present")
+                )
                 out.append(entry)
             return self._env({"channels": out, "note": "settings were not changed"})
 
-    def autoset(self, channel: int = 1, method: str = "software", max_iterations: int = 6,
-                target_cycles: float = 4.0) -> dict[str, Any]:  # fmt: skip
+    def autoset(
+        self, channel: int = 1, method: str = "software", max_iterations: int = 6, target_cycles: float = 4.0
+    ) -> dict[str, Any]:
         if method == "instrument":
             return self._env(self.controller.front_panel_autoset())
         if method != "software":
@@ -709,8 +900,12 @@ class ScopeService:
                 ch = st.channels[channel]
                 probe = ch.probe or 1
                 q = cap.quality
-                step: dict[str, Any] = {"iteration": it, "capture_id": cap.capture_id,
-                                        "raw_ptp": q["raw_peak_to_peak_counts"], "clipped": q["clipped"]}  # fmt: skip
+                step: dict[str, Any] = {
+                    "iteration": it,
+                    "capture_id": cap.capture_id,
+                    "raw_ptp": q["raw_peak_to_peak_counts"],
+                    "clipped": q["clipped"],
+                }
                 history.append(step)
                 vb = ch.vb_index
                 lo_vb, hi_vb = DSO5102P_VB_RANGE
@@ -726,16 +921,20 @@ class ScopeService:
                     cands = [i for i in range(lo_vb, hi_vb + 1) if VOLTS_PER_DIV[i] >= want]
                     new_vb = cands[0] if cands else hi_vb
                     if new_vb != vb:
-                        changes.append(ctl.set_volts_per_div(channel, VOLTS_PER_DIV[new_vb] * probe).as_dict())
+                        changes.append(
+                            ctl.set_volts_per_div(channel, VOLTS_PER_DIV[new_vb] * probe).as_dict()
+                        )
                         changed = True
-                    mid = (float(cap.voltage_v.max()) + float(cap.voltage_v.min())) / 2
+                    mid = (float(np.max(cap.voltage_v)) + float(np.min(cap.voltage_v))) / 2
                     mid_div = mid / (VOLTS_PER_DIV[new_vb] * probe)
                     pos_div = ch.position_counts / ctl.calibration.counts_per_div
                     if abs(mid_div + pos_div) > 2.0 and abs(mid_div) <= 8:
                         changes.append(ctl.set_position(channel, round(-mid_div, 1)).as_dict())
                         changed = True
                 elif q["flat"] and vb > lo_vb:
-                    changes.append(ctl.set_volts_per_div(channel, VOLTS_PER_DIV[max(lo_vb, vb - 3)] * probe).as_dict())
+                    changes.append(
+                        ctl.set_volts_per_div(channel, VOLTS_PER_DIV[max(lo_vb, vb - 3)] * probe).as_dict()
+                    )
                     changed = True
                 # horizontal (only once vertical is sane)
                 if not changed and not q["flat"] and cap.sample_interval_s:
@@ -748,7 +947,10 @@ class ScopeService:
                         step["frequency_hz"] = f0
                         want_tb = target_cycles / f0 / span
                         lo_tb, hi_tb = DSO5102P_TB_RANGE
-                        new_tb = min(range(lo_tb, hi_tb + 1), key=lambda i: abs(math.log(TIMEBASE_S_PER_DIV[i] / want_tb)))
+                        new_tb = min(
+                            range(lo_tb, hi_tb + 1),
+                            key=lambda i: abs(math.log(TIMEBASE_S_PER_DIV[i] / want_tb)),
+                        )
                         if new_tb != tb:
                             changes.append(ctl.set_timebase(TIMEBASE_S_PER_DIV[new_tb]).as_dict())
                             changed = True
@@ -770,7 +972,7 @@ class ScopeService:
                     final = ctl.capture_channels([channel], "stop_and_read", 5.0, True, True, "autoset")[0]
                     self.store.add(final)
                     if final.voltage_v is not None and not final.quality["flat"]:
-                        mid = (float(final.voltage_v.max()) + float(final.voltage_v.min())) / 2
+                        mid = (float(np.max(final.voltage_v)) + float(np.min(final.voltage_v))) / 2
                         changes.append(ctl.set_trigger_level(mid).as_dict())
                 else:
                     trig_notes.append("trigger type is not edge: trigger left unchanged")
@@ -778,13 +980,17 @@ class ScopeService:
                 trig_notes.append(f"trigger adjustment failed: {e}")
             final = ctl.capture_channels([channel], "stop_and_read", 5.0, True, True, "autoset_final")[0]
             self.store.add(final)
-        return self._env({
-            "method": "software_assisted_autoset",
-            "note": "settings chosen from measured data; every change below was confirmed by instrument read-back",
-            "changes": changes, "iterations": history, "trigger_notes": trig_notes,
-            "final_capture": self.capture_brief(final),
-            "final_settings": self.controller.get_channel(channel),
-        })  # fmt: skip
+        return self._env(
+            {
+                "method": "software_assisted_autoset",
+                "note": "settings chosen from measured data; every change below was confirmed by instrument read-back",
+                "changes": changes,
+                "iterations": history,
+                "trigger_notes": trig_notes,
+                "final_capture": self.capture_brief(final),
+                "final_settings": self.controller.get_channel(channel),
+            }
+        )
 
     def _metric(self, cap: WaveformCapture, metric: str) -> float | None:
         y, _, _ = self._data(cap, True, False)
@@ -793,9 +999,9 @@ class ScopeService:
             if metric == "vpp":
                 return float(np.ptp(y))
             if metric == "vmax":
-                return float(y.max())
+                return float(np.max(y))
             if metric == "vmin":
-                return float(y.min())
+                return float(np.min(y))
             if metric == "mean":
                 return float(y.mean())
             if metric == "rms":
@@ -813,8 +1019,16 @@ class ScopeService:
             return None
         raise ParameterError(f"unknown metric {metric!r}; choose from {list(CONDITION_METRICS)}")
 
-    def measure_repeatedly(self, channel: int, metrics: list[str], count: int = 10, interval_s: float = 0.0,
-                           mode: str = "single", timeout_s: float = 5.0, keep_captures: bool = False) -> dict[str, Any]:  # fmt: skip
+    def measure_repeatedly(
+        self,
+        channel: int,
+        metrics: list[str],
+        count: int = 10,
+        interval_s: float = 0.0,
+        mode: str = "single",
+        timeout_s: float = 5.0,
+        keep_captures: bool = False,
+    ) -> dict[str, Any]:
         lim = self.config.limits.max_repeat_count
         if not 1 <= count <= lim:
             raise LimitExceededError(f"count must be within 1..{lim}", details={"limit": lim})
@@ -831,7 +1045,9 @@ class ScopeService:
             for i in range(count):
                 try:
                     wf.check()
-                    cap = self.controller.capture_channels([channel], mode, timeout_s, False, True, "repeat")[0]
+                    cap = self.controller.capture_channels([channel], mode, timeout_s, False, True, "repeat")[
+                        0
+                    ]
                 except (AbortedError, LimitExceededError) as e:
                     aborted = e.to_dict()
                     break
@@ -847,16 +1063,42 @@ class ScopeService:
         stats = {}
         for m, vs in values.items():
             arr = np.array([v for v in vs if v is not None], dtype=float)
-            stats[m] = None if not arr.size else {"mean": arr.mean(), "std": arr.std(), "min": arr.min(),
-                                                  "max": arr.max(), "n": int(arr.size),
-                                                  "failed": len(vs) - int(arr.size)}  # fmt: skip
-        return self._env({"channel": channel, "iterations": len(next(iter(values.values()), [])),
-                          "statistics": stats, "values": values, "stored_capture_ids": ids,
-                          "stale_records_detected": stale, "aborted": aborted,
-                          "units": "V for amplitude metrics when scaling is available (else counts); Hz; %; s"})  # fmt: skip
+            stats[m] = (
+                None
+                if not arr.size
+                else {
+                    "mean": arr.mean(),
+                    "std": arr.std(),
+                    "min": np.min(arr),
+                    "max": np.max(arr),
+                    "n": int(arr.size),
+                    "failed": len(vs) - int(arr.size),
+                }
+            )
+        return self._env(
+            {
+                "channel": channel,
+                "iterations": len(next(iter(values.values()), [])),
+                "statistics": stats,
+                "values": values,
+                "stored_capture_ids": ids,
+                "stale_records_detected": stale,
+                "aborted": aborted,
+                "units": "V for amplitude metrics when scaling is available (else counts); Hz; %; s",
+            }
+        )
 
-    def acquire_until(self, channel: int, metric: str, op: str, threshold: float, max_attempts: int = 20,
-                      timeout_s: float = 60.0, mode: str = "single", capture_timeout_s: float = 5.0) -> dict[str, Any]:  # fmt: skip
+    def acquire_until(
+        self,
+        channel: int,
+        metric: str,
+        op: str,
+        threshold: float,
+        max_attempts: int = 20,
+        timeout_s: float = 60.0,
+        mode: str = "single",
+        capture_timeout_s: float = 5.0,
+    ) -> dict[str, Any]:
         if metric not in CONDITION_METRICS:
             raise ParameterError(f"metric must be one of {list(CONDITION_METRICS)}")
         if op not in _OPS:
@@ -872,7 +1114,9 @@ class ScopeService:
                 except LimitExceededError:
                     break
                 try:
-                    cap = self.controller.capture_channels([channel], mode, capture_timeout_s, False, True, "acquire_until")[0]
+                    cap = self.controller.capture_channels(
+                        [channel], mode, capture_timeout_s, False, True, "acquire_until"
+                    )[0]
                 except HantekError as e:
                     if e.code == "TRIGGER_TIMEOUT":
                         history.append(None)
@@ -882,10 +1126,23 @@ class ScopeService:
                 history.append(v)
                 if v is not None and _OPS[op](v, threshold):
                     self.store.add(cap)
-                    return self._env({"condition_met": True, "attempts": attempt, "value": v,
-                                      "capture": self.capture_brief(cap), "history": history[-50:]})  # fmt: skip
-        return self._env({"condition_met": False, "attempts": len(history), "history": history[-50:],
-                          "note": "condition not met within the attempt/time limits"})  # fmt: skip
+                    return self._env(
+                        {
+                            "condition_met": True,
+                            "attempts": attempt,
+                            "value": v,
+                            "capture": self.capture_brief(cap),
+                            "history": history[-50:],
+                        }
+                    )
+        return self._env(
+            {
+                "condition_met": False,
+                "attempts": len(history),
+                "history": history[-50:],
+                "note": "condition not met within the attempt/time limits",
+            }
+        )
 
     def run_plan(self, steps: list[dict[str, Any]], stop_on_error: bool = True) -> dict[str, Any]:
         lim = self.config.limits.max_plan_steps
@@ -923,20 +1180,34 @@ class ScopeService:
                         break
                     continue
                 results.append(entry)
-        return self._env({"steps_requested": len(steps), "steps_executed": len(results),
-                          "all_ok": all(r["ok"] for r in results) and len(results) == len(steps),
-                          "results": results})  # fmt: skip
+        return self._env(
+            {
+                "steps_requested": len(steps),
+                "steps_executed": len(results),
+                "all_ok": all(r["ok"] for r in results) and len(results) == len(steps),
+                "results": results,
+            }
+        )
 
     def _plan_step(self, action: str, a: dict[str, Any], last_pair: tuple[str, str] | None) -> Any:
         table: dict[str, Callable[..., Any]] = {
-            "enable_channel": self.enable_channel, "set_vertical_scale": self.set_vertical_scale,
-            "set_vertical_offset": self.set_vertical_offset, "set_coupling": self.set_coupling,
-            "set_probe_attenuation": self.set_probe, "set_timebase": self.set_timebase,
-            "set_trigger_source": self.set_trigger_source, "set_trigger_mode": self.set_trigger_mode,
-            "set_trigger_slope": self.set_trigger_slope, "set_trigger_level": self.set_trigger_level,
-            "capture": self.capture, "capture_both_channels": self.capture_both, "measure": self.measure,
-            "fft": self.fft, "start_acquisition": self.start, "stop_acquisition": self.stop,
-        }  # fmt: skip
+            "enable_channel": self.enable_channel,
+            "set_vertical_scale": self.set_vertical_scale,
+            "set_vertical_offset": self.set_vertical_offset,
+            "set_coupling": self.set_coupling,
+            "set_probe_attenuation": self.set_probe,
+            "set_timebase": self.set_timebase,
+            "set_trigger_source": self.set_trigger_source,
+            "set_trigger_mode": self.set_trigger_mode,
+            "set_trigger_slope": self.set_trigger_slope,
+            "set_trigger_level": self.set_trigger_level,
+            "capture": self.capture,
+            "capture_both_channels": self.capture_both,
+            "measure": self.measure,
+            "fft": self.fft,
+            "start_acquisition": self.start,
+            "stop_acquisition": self.stop,
+        }
         if action == "wait":
             secs = float(a.get("seconds", 0))
             if not 0 <= secs <= 10:
@@ -952,7 +1223,10 @@ class ScopeService:
             return self.phase(**a) if action == "phase" else self.channel_delay(**a)
         fn = table.get(action)
         if fn is None:
-            raise ParameterError(f"unknown plan action {action!r}", details={"allowed": [*table, "wait", "phase", "channel_delay"]})
+            raise ParameterError(
+                f"unknown plan action {action!r}",
+                details={"allowed": [*table, "wait", "phase", "channel_delay"]},
+            )
         try:
             return fn(**a)
         except TypeError as e:
@@ -975,12 +1249,18 @@ class ScopeService:
         return self._env(self.controller.protocol_diagnostics())
 
     def recent_errors(self, limit: int = 20) -> dict[str, Any]:
-        errs = list(self.controller.recent_errors)[-max(1, min(limit, 100)):]
+        errs = list(self.controller.recent_errors)[-max(1, min(limit, 100)) :]
         return self._env({"errors": errs, "total_recorded": len(self.controller.recent_errors)})
 
-    def self_test(self, channel: int = 1, expected_frequency_hz: float = 1000.0, expected_vpp: float = 5.0,
-                  frequency_tolerance_pct: float = 2.0, vpp_tolerance_pct: float = 10.0,
-                  mode: str = "single") -> dict[str, Any]:  # fmt: skip
+    def self_test(
+        self,
+        channel: int = 1,
+        expected_frequency_hz: float = 1000.0,
+        expected_vpp: float = 5.0,
+        frequency_tolerance_pct: float = 2.0,
+        vpp_tolerance_pct: float = 10.0,
+        mode: str = "single",
+    ) -> dict[str, Any]:
         """Probe-compensation self-test: connect the probe to PROBE COMP (~5 V, 1 kHz square)."""
         checks: list[dict[str, Any]] = []
         st = self.controller.read_settings()
@@ -994,16 +1274,28 @@ class ScopeService:
         q = cap.quality
         checks.append({"check": "not_clipped", "pass": not q["clipped"]})
         checks.append({"check": "signal_present", "pass": not q["flat"]})
-        checks.append({"check": "fresh_record", "pass": cap.acquisition.freshness == Freshness.NEW_TRIGGER_CONFIRMED,
-                       "value": str(cap.acquisition.freshness)})  # fmt: skip
+        checks.append(
+            {
+                "check": "fresh_record",
+                "pass": cap.acquisition.freshness == Freshness.NEW_TRIGGER_CONFIRMED,
+                "value": str(cap.acquisition.freshness),
+            }
+        )
         suggestions: dict[str, Any] = {}
         y, unit, _ = self._data(cap, True, False)
         try:
             f = meas.frequency(y, cap.sample_interval_s)["frequency_hz"]
             err = 100 * (f - expected_frequency_hz) / expected_frequency_hz
-            checks.append({"check": "frequency", "pass": abs(err) <= frequency_tolerance_pct, "measured_hz": f,
-                           "expected_hz": expected_frequency_hz, "error_pct": err,
-                           "tolerance_pct": frequency_tolerance_pct})  # fmt: skip
+            checks.append(
+                {
+                    "check": "frequency",
+                    "pass": abs(err) <= frequency_tolerance_pct,
+                    "measured_hz": f,
+                    "expected_hz": expected_frequency_hz,
+                    "error_pct": err,
+                    "tolerance_pct": frequency_tolerance_pct,
+                }
+            )
             spd = cap.horizontal.get("samples_per_div")
             if spd:
                 suggestions["samples_per_div_if_frequency_error_is_scaling"] = spd * f / expected_frequency_hz
@@ -1013,9 +1305,16 @@ class ScopeService:
             lv = meas.levels(y)
             vpp = lv.amplitude
             err = 100 * (vpp - expected_vpp) / expected_vpp
-            checks.append({"check": "amplitude_top_minus_base", "pass": abs(err) <= vpp_tolerance_pct,
-                           "measured_v": vpp, "expected_v": expected_vpp, "error_pct": err,
-                           "tolerance_pct": vpp_tolerance_pct})  # fmt: skip
+            checks.append(
+                {
+                    "check": "amplitude_top_minus_base",
+                    "pass": abs(err) <= vpp_tolerance_pct,
+                    "measured_v": vpp,
+                    "expected_v": expected_vpp,
+                    "error_pct": err,
+                    "tolerance_pct": vpp_tolerance_pct,
+                }
+            )
             if vpp > 0:
                 suggestions["counts_per_div_if_amplitude_error_is_scaling"] = (
                     self.controller.calibration.counts_per_div * vpp / expected_vpp
@@ -1023,15 +1322,21 @@ class ScopeService:
         else:
             checks.append({"check": "amplitude", "pass": False, "error": "voltage scaling unavailable"})
         ok = all(c["pass"] for c in checks)
-        return self._env({
-            "pass": ok, "checks": checks, "capture": self.capture_brief(cap),
-            "calibration_suggestions": suggestions,
-            "note": "suggestions are NOT applied automatically. The probe-comp output's own accuracy is not "
-                    "specified by Hantek; confirm against a calibrated reference before changing scaling.",
-        })  # fmt: skip
+        return self._env(
+            {
+                "pass": ok,
+                "checks": checks,
+                "capture": self.capture_brief(cap),
+                "calibration_suggestions": suggestions,
+                "note": "suggestions are NOT applied automatically. The probe-comp output's own accuracy is not "
+                "specified by Hantek; confirm against a calibrated reference before changing scaling.",
+            }
+        )
 
 
-def _decimate(c: WaveformCapture, max_points: int, method: str) -> tuple[list[float], list[float], list[float] | None]:
+def _decimate(
+    c: WaveformCapture, max_points: int, method: str
+) -> tuple[list[float], list[float], list[float] | None]:
     n = c.sample_count
     t, raw, v = c.time_s, c.raw_samples.astype(np.float64), c.voltage_v
     if n <= max_points:
@@ -1042,8 +1347,11 @@ def _decimate(c: WaveformCapture, max_points: int, method: str) -> tuple[list[fl
     if method == "mean":
         b = math.ceil(n / max_points)
         m = n // b * b
-        return (t[:m].reshape(-1, b).mean(1).tolist(), raw[:m].reshape(-1, b).mean(1).tolist(),
-                None if v is None else v[:m].reshape(-1, b).mean(1).tolist())  # fmt: skip
+        return (
+            t[:m].reshape(-1, b).mean(1).tolist(),
+            raw[:m].reshape(-1, b).mean(1).tolist(),
+            None if v is None else v[:m].reshape(-1, b).mean(1).tolist(),
+        )
     b = math.ceil(n / (max_points // 2))
     m = n // b * b
     rb = raw[:m].reshape(-1, b)

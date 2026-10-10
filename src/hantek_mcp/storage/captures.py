@@ -11,6 +11,7 @@ every resolved path is checked to stay inside its directory.
 
 from __future__ import annotations
 
+import builtins
 import csv
 import io
 import json
@@ -52,7 +53,14 @@ def safe_filename(name: str, suffix: str) -> str:
     return base + suffix
 
 
-_WIN_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+_WIN_RESERVED = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
 
 
 def _inside(path: Path, root: Path) -> bool:
@@ -93,7 +101,7 @@ class CaptureStore:
                 with np.load(p, allow_pickle=False) as npz:
                     meta = json.loads(str(npz["metadata_json"]))
                 entries.append((meta["timestamp_utc"], meta, p.stat().st_size))
-            except Exception as e:  # noqa: BLE001 - skip unreadable files but say so
+            except Exception as e:
                 log.warning("ignoring unreadable capture file %s: %s", p.name, e)
         for _, meta, size in sorted(entries, key=lambda e: e[0]):
             cid = meta["capture_id"]
@@ -126,8 +134,10 @@ class CaptureStore:
                 self._sizes[cap.capture_id] = path.stat().st_size
             else:
                 self._memory_only[cap.capture_id] = cap
-                self._sizes[cap.capture_id] = cap.raw_samples.nbytes + cap.time_s.nbytes + (
-                    0 if cap.voltage_v is None else cap.voltage_v.nbytes
+                self._sizes[cap.capture_id] = (
+                    cap.raw_samples.nbytes
+                    + cap.time_s.nbytes
+                    + (0 if cap.voltage_v is None else cap.voltage_v.nbytes)
                 )
             self._index[cap.capture_id] = cap.summary()
             self._remember(cap)
@@ -175,7 +185,9 @@ class CaptureStore:
         except KeyError:
             raise CaptureNotFoundError(f"no capture with id {capture_id!r}") from None
 
-    def list(self, limit: int = 50, channel: int | None = None, label: str | None = None) -> list[dict[str, Any]]:
+    def list(
+        self, limit: int = 50, channel: int | None = None, label: str | None = None
+    ) -> list[dict[str, Any]]:
         with self._lock:
             items = list(reversed(self._index.values()))
         if channel is not None:
@@ -207,7 +219,7 @@ class CaptureStore:
 
     def _export_path(self, name: str | None, default: str, suffix: str, overwrite: bool) -> Path:
         self.export_dir.mkdir(parents=True, exist_ok=True)
-        fname = safe_filename(name or default, suffix)
+        fname = safe_filename(default if name is None else name, suffix)
         path = self.export_dir / fname
         if not _inside(path, self.export_dir):
             raise PathNotAllowedError("export path escapes the export directory")
@@ -227,7 +239,7 @@ class CaptureStore:
         np.savez_compressed(path, **cap.to_npz_dict())
         return path
 
-    def list_exports(self) -> list[dict[str, Any]]:
+    def list_exports(self) -> builtins.list[dict[str, Any]]:
         if not self.export_dir.is_dir():
             return []
         return [
@@ -281,8 +293,14 @@ def capture_to_csv(cap: WaveformCapture) -> str:
     w.writerow(["index", "time_s", "raw_counts", "voltage_v"])
     volts = cap.voltage_v
     for i in range(cap.sample_count):
-        w.writerow([i, repr(float(cap.time_s[i])), int(cap.raw_samples[i]),
-                    "" if volts is None else repr(float(volts[i]))])  # fmt: skip
+        w.writerow(
+            [
+                i,
+                repr(float(cap.time_s[i])),
+                int(cap.raw_samples[i]),
+                "" if volts is None else repr(float(volts[i])),
+            ]
+        )
     return buf.getvalue()
 
 

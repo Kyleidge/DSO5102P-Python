@@ -99,6 +99,9 @@ extend-exclude = ["legacy"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PTH", "N", "C4", "PL"]
 ignore = [
+    "E501",     # line length is handled by the formatter
+    "PLC0415",  # deliberate local imports for optional/heavy dependencies
+    "PLR0917",
     "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004", "PLW0603",
     "RUF001", "RUF002", "RUF003",
     "N802", "N815",

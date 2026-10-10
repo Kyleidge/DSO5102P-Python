@@ -16,6 +16,7 @@ from hantek_mcp import __version__
 from hantek_mcp.config import AppConfig
 from hantek_mcp.errors import (
     AbortedError,
+    DeviceBusyError,
     DeviceDisconnectedError,
     HantekError,
     LimitExceededError,
@@ -184,15 +185,28 @@ class ControllerCore:
 
     def require_session(self) -> ProtocolSession:
         if self.state == ConnectionState.LOST:
-            raise NotConnectedError("the instrument was disconnected; call connect() to re-establish the link")
+            raise NotConnectedError(
+                "the instrument was disconnected; call connect() to re-establish the link"
+            )
         if self.session is None or self.state != ConnectionState.CONNECTED:
             raise NotConnectedError("not connected to the instrument; call connect() first")
         return self.session
 
     @contextlib.contextmanager
-    def operation(self, name: str) -> Iterator[ProtocolSession]:
-        """Serialise an instrument operation and translate failures consistently."""
-        with self.lock:
+    def operation(self, name: str, wait_s: float | None = None) -> Iterator[ProtocolSession]:
+        """Serialise an instrument operation and translate failures consistently.
+
+        ``wait_s`` bounds how long to wait for another operation to finish (default:
+        ``limits.max_lock_wait_s``); status-type callers use a short wait so they never
+        block behind a long capture.
+        """
+        timeout = self.config.limits.max_lock_wait_s if wait_s is None else wait_s
+        if not self.lock.acquire(timeout=timeout):
+            raise DeviceBusyError(
+                f"instrument busy with {self._busy_op or self._workflow or 'another operation'!r}",
+                details={"busy_operation": self._busy_op, "workflow": self._workflow, "waited_s": timeout},
+            )
+        try:
             session = self.require_session()
             outer = self._depth == 0
             if outer:
@@ -216,6 +230,8 @@ class ControllerCore:
                     self._busy_op = None
                     if self._workflow is None:
                         self._token = None
+        finally:
+            self.lock.release()
 
     def _begin_token(self) -> None:
         self._token = self._abort_gen
@@ -264,7 +280,9 @@ class ControllerCore:
                 session = ProtocolSession(
                     transport,
                     SessionTimeouts(
-                        default_s=u.timeout_s, sample_s=u.sample_timeout_s, screenshot_s=u.screenshot_timeout_s
+                        default_s=u.timeout_s,
+                        sample_s=u.sample_timeout_s,
+                        screenshot_s=u.screenshot_timeout_s,
                     ),
                     command_delay_s=0.0 if self.simulated else u.command_delay_s,
                     max_retries=u.max_retries,
@@ -287,7 +305,9 @@ class ControllerCore:
     def _load_instrument_descriptors(self, session: ProtocolSession) -> None:
         try:
             text = session.read_file("/protocol.inf").decode("ascii", "replace")
-            self.layout = parse_layout(text, source="instrument:/protocol.inf") if text.strip() else default_layout()
+            self.layout = (
+                parse_layout(text, source="instrument:/protocol.inf") if text.strip() else default_layout()
+            )
             self.layout_from_instrument = bool(text.strip())
         except HantekError as e:
             log.warning("could not read /protocol.inf (%s); using bundled DSO5102P layout", e)
@@ -306,7 +326,9 @@ class ControllerCore:
             log.warning("could not read /sys.inf (%s)", e)
             self.sys_info = {}
         try:
-            self.model_name = session.read_file("/logotype.dis").split(b"\x00")[0].decode("ascii", "replace").strip()
+            self.model_name = (
+                session.read_file("/logotype.dis").split(b"\x00")[0].decode("ascii", "replace").strip()
+            )
         except HantekError:
             self.model_name = None
 
@@ -320,7 +342,7 @@ class ControllerCore:
         if self.transport is not None:
             try:
                 self.transport.close()
-            except Exception:  # noqa: BLE001 - device may already be gone
+            except Exception:
                 log.debug("transport close failed", exc_info=True)
         self.transport = None
         self.session = None
@@ -341,8 +363,8 @@ class ControllerCore:
         self._settings, self._settings_time = st, time.monotonic()
         return st
 
-    def read_settings(self, max_age_s: float = 0.0) -> ScopeSettings:
-        with self.operation("read_settings") as s:
+    def read_settings(self, max_age_s: float = 0.0, wait_s: float | None = None) -> ScopeSettings:
+        with self.operation("read_settings", wait_s) as s:
             if self._settings is not None and time.monotonic() - self._settings_time <= max_age_s:
                 return self._settings
             return self._refresh_settings(s)
@@ -380,12 +402,16 @@ class ControllerCore:
                 "emulation is disabled to avoid pressing the wrong keys"
             )
 
-    def press(self, session: ProtocolSession, key: Key, count: int = 1, allow_disruptive: bool = False) -> int:
+    def press(
+        self, session: ProtocolSession, key: Key, count: int = 1, allow_disruptive: bool = False
+    ) -> int:
         """Press ``key`` ``count`` times, flushing each press with an echo (dsoc-extended found the
         instrument processes a key when the next command arrives) and waiting for it to settle."""
         self._ensure_keys_usable()
         if key in keymod.DISRUPTIVE_KEYS and not allow_disruptive:
-            raise UnsupportedOperationError(f"key {key.name} is disruptive and requires explicit confirmation")
+            raise UnsupportedOperationError(
+                f"key {key.name} is disruptive and requires explicit confirmation"
+            )
         limit = self.config.limits.max_key_presses_per_operation
         if count > limit:
             raise LimitExceededError(
@@ -426,10 +452,18 @@ class ControllerCore:
         if observed != requested:
             raise SettingNotConfirmedError(
                 f"{setting}: requested {requested!r} but the instrument reports {observed!r}",
-                details={"setting": setting, "requested": requested, "observed": observed,
-                         "previous": previous, "method": method, "key_presses": presses},
-            )  # fmt: skip
-        res = SettingResult(setting, requested, previous, observed, method, "readback_confirmed", presses, notes)
+                details={
+                    "setting": setting,
+                    "requested": requested,
+                    "observed": observed,
+                    "previous": previous,
+                    "method": method,
+                    "key_presses": presses,
+                },
+            )
+        res = SettingResult(
+            setting, requested, previous, observed, method, "readback_confirmed", presses, notes
+        )
         self.emit("setting_changed", **res.as_dict())
         return res
 

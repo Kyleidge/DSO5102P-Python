@@ -12,6 +12,7 @@ noise chatter, with linear interpolation between samples at the reference level.
 
 from __future__ import annotations
 
+import itertools
 import math
 from dataclasses import dataclass
 from typing import Any
@@ -61,7 +62,7 @@ def levels(y: npt.ArrayLike, bins: int = 256) -> Levels:
     method falls back to max/min, mirroring common oscilloscope behaviour.
     """
     a = as_float(y)
-    lo, hi = float(a.min()), float(a.max())
+    lo, hi = float(np.min(a)), float(np.max(a))
     if hi - lo <= 0:
         return Levels(hi, lo, "flat record: top = base = value")
     nb = max(16, min(bins, a.size // 8))
@@ -84,7 +85,9 @@ def levels(y: npt.ArrayLike, bins: int = 256) -> Levels:
 
     top, ok_t = mode(slice(half, nb), hi)
     base, ok_b = mode(slice(0, half), lo)
-    method = "histogram mode of upper/lower halves" if ok_t and ok_b else "max/min (no flat top/base detected)"
+    method = (
+        "histogram mode of upper/lower halves" if ok_t and ok_b else "max/min (no flat top/base detected)"
+    )
     if not (ok_t and ok_b):
         top, base = hi, lo
     return Levels(top, base, method)
@@ -94,9 +97,9 @@ def voltage_stats(y: npt.ArrayLike) -> dict[str, float]:
     a = as_float(y)
     lv = levels(a)
     return {
-        "maximum": float(a.max()),
-        "minimum": float(a.min()),
-        "peak_to_peak": float(a.max() - a.min()),
+        "maximum": float(np.max(a)),
+        "minimum": float(np.min(a)),
+        "peak_to_peak": float(np.max(a) - np.min(a)),
         "mean": float(a.mean()),
         "rms": float(math.sqrt(float(np.mean(a * a)))),
         "ac_rms": float(a.std()),
@@ -140,19 +143,47 @@ def crossings(y: FloatArray, level: float, hysteresis: float) -> tuple[FloatArra
 
 
 def default_hysteresis(lv: Levels, y: FloatArray) -> float:
-    noise = noise_estimate(y)["noise_rms"]
+    noise = float(noise_estimate(y)["noise_rms"])
     return max(0.05 * lv.amplitude, 3.0 * noise)
 
 
-def _timing_unc(dt: float | None, span_s: float, simulated: bool) -> dict[str, Any]:
+def _timing_unc(
+    dt: float | None, span_s: float, simulated: bool, edge_jitter_s: float = 0.0
+) -> dict[str, Any]:
+    """Relative uncertainty of a period/frequency derived from two edge times ``span_s`` apart.
+
+    Combines (in quadrature) the interpolation/quantisation error of each edge (~dt/sqrt(12)),
+    the noise-induced edge jitter (noise_rms / slope at the crossing) and, for hardware, the
+    instrument's +-50 ppm timebase accuracy.
+    """
     if dt is None or span_s <= 0:
         return {}
-    rel_sampling = math.sqrt(2.0) * dt / span_s
-    out: dict[str, Any] = {"relative_uncertainty_sampling": rel_sampling}
+    rel_sampling = math.sqrt(2.0) * (dt / math.sqrt(12.0)) / span_s
+    rel_noise = math.sqrt(2.0) * edge_jitter_s / span_s
+    out: dict[str, Any] = {
+        "relative_uncertainty_sampling": rel_sampling,
+        "relative_uncertainty_noise": rel_noise,
+        "edge_jitter_s_est": edge_jitter_s,
+    }
+    rel_tb = 0.0 if simulated else TIMEBASE_ACCURACY_PPM * 1e-6
     if not simulated:
-        out["relative_uncertainty_timebase"] = TIMEBASE_ACCURACY_PPM * 1e-6
-    out["relative_uncertainty_est"] = rel_sampling + (0.0 if simulated else TIMEBASE_ACCURACY_PPM * 1e-6)
+        out["relative_uncertainty_timebase"] = rel_tb
+    out["relative_uncertainty_est"] = math.sqrt(rel_sampling**2 + rel_noise**2 + rel_tb**2)
+    out["uncertainty_note"] = "1-sigma estimate; excludes probe/signal-source effects"
     return out
+
+
+def _edge_jitter(a: FloatArray, edges: FloatArray, dt: float | None) -> float:
+    """noise_rms / |slope| at the crossings, in seconds (or samples when dt is None)."""
+    if edges.size == 0:
+        return 0.0
+    noise = float(noise_estimate(a)["noise_rms"])
+    grad = np.gradient(a)
+    idx = np.clip(np.round(edges).astype(int), 0, a.size - 1)
+    slope = float(np.median(np.abs(grad[idx])))  # units per sample
+    if slope <= 0:
+        return 0.0
+    return noise / slope * (dt if dt is not None else 1.0)
 
 
 def frequency(y: npt.ArrayLike, dt: float | None, simulated: bool = False) -> dict[str, Any]:
@@ -182,7 +213,7 @@ def frequency(y: npt.ArrayLike, dt: float | None, simulated: bool = False) -> di
         "hysteresis": hyst,
         "method": "mean interval between 50%-level crossings (Schmitt hysteresis, linear interpolation)",
     }
-    out.update(_timing_unc(dt, (edges[-1] - edges[0]) * unit_dt, simulated))
+    out.update(_timing_unc(dt, (edges[-1] - edges[0]) * unit_dt, simulated, _edge_jitter(a, edges, dt)))
     if period_samples < 10:
         out["warning"] = "fewer than 10 samples per cycle: timing accuracy is limited; use a faster timebase"
     return out
@@ -196,7 +227,7 @@ def duty_cycle(y: npt.ArrayLike, dt: float | None) -> dict[str, Any]:
     if rising.size < 2 or falling.size < 1:
         raise MeasurementError("need at least one complete cycle (two rising edges and one falling edge)")
     pos, neg = [], []
-    for r0, r1 in zip(rising[:-1], rising[1:], strict=True):
+    for r0, r1 in itertools.pairwise(rising):
         f = falling[(falling > r0) & (falling < r1)]
         if f.size:
             pos.append(f[0] - r0)
@@ -217,7 +248,9 @@ def duty_cycle(y: npt.ArrayLike, dt: float | None) -> dict[str, Any]:
     }
 
 
-def transition_time(y: npt.ArrayLike, dt: float | None, rising: bool, lo: float = 0.1, hi: float = 0.9) -> dict[str, Any]:
+def transition_time(
+    y: npt.ArrayLike, dt: float | None, rising: bool, lo: float = 0.1, hi: float = 0.9
+) -> dict[str, Any]:
     """10%-90% rise (or 90%-10% fall) time averaged over all complete edges."""
     a = as_float(y)
     lv = levels(a)
@@ -275,18 +308,29 @@ def _interp_cross(a: FloatArray, i: int, level: float) -> float:
 
 
 def noise_estimate(y: npt.ArrayLike) -> dict[str, Any]:
-    """Robust white-noise RMS from first differences: sigma = 1.4826*MAD(diff)/sqrt(2).
+    """Robust white-noise RMS from first differences.
 
-    Insensitive to slow signal content and to occasional edges. For quantised data
-    with noise below ~0.5 LSB the estimate collapses towards 0: report the LSB.
+    Differences remove slow signal content; outliers (edges) are rejected with a 5-sigma
+    window derived from the MAD, then sigma = std(kept differences) / sqrt(2). Using the
+    trimmed standard deviation rather than the MAD itself avoids the MAD's bias on
+    coarsely quantised 8-bit data. Noise well below 1 LSB cannot be resolved.
     """
     a = as_float(y)
     d = np.diff(a)
-    mad = float(np.median(np.abs(d - np.median(d))))
-    sigma = 1.4826 * mad / math.sqrt(2.0)
+    med = float(np.median(d))
+    dev = np.abs(d - med)
+    s0 = 1.4826 * float(np.median(dev))
+    if s0 > 0:
+        thr = 5.0 * s0
+    else:
+        nz = dev[dev > 0]
+        thr = 3.0 * float(np.min(nz)) if nz.size else 0.0
+    kept = d[dev <= thr]
+    sigma = float(np.std(kept)) / math.sqrt(2.0) if kept.size > 1 else 0.0
     return {
         "noise_rms": sigma,
-        "method": "1.4826 * MAD(first difference) / sqrt(2) (robust to edges and slow signal content)",
+        "differences_rejected": int(d.size - kept.size),
+        "method": "std of first differences after 5-sigma (MAD) outlier rejection, / sqrt(2)",
     }
 
 

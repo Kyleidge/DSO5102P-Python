@@ -60,7 +60,7 @@ def load_backend() -> tuple[Any, str]:
             if be is not None:
                 return be, "libusb-1.0 (libusb-package bundled DLL)"
             errors.append("libusb-package returned no backend")
-        except Exception as e:  # noqa: BLE001 - report every backend failure
+        except Exception as e:
             errors.append(f"libusb-package: {e}")
     try:
         import usb.backend.libusb1 as l1
@@ -69,7 +69,7 @@ def load_backend() -> tuple[Any, str]:
         if be is not None:
             return be, "libusb-1.0 (system)"
         errors.append("system libusb-1.0 not found")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         errors.append(f"libusb1: {e}")
     try:
         import usb.backend.libusb0 as l0
@@ -78,7 +78,7 @@ def load_backend() -> tuple[Any, str]:
         if be is not None:
             return be, "libusb-0.1 / libusb-win32"
         errors.append("libusb-0.1 not found")
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         errors.append(f"libusb0: {e}")
     del usb
     raise BackendUnavailableError(
@@ -133,7 +133,9 @@ class UsbTransport(Transport):
         sel = self.selector
         try:
             devices = list(
-                usb.core.find(find_all=True, idVendor=sel.vendor_id, idProduct=sel.product_id, backend=backend)
+                usb.core.find(
+                    find_all=True, idVendor=sel.vendor_id, idProduct=sel.product_id, backend=backend
+                )
             )
         except usb.core.USBError as e:
             raise TransportError(f"USB enumeration failed: {e}") from e
@@ -183,9 +185,13 @@ class UsbTransport(Transport):
         self._ep_in = ep_in
         log.info(
             "opened DSO on bus %s address %s (OUT 0x%02X, IN 0x%02X, wMaxPacketSize %s) via %s",
-            dev.bus, dev.address, ep_out.bEndpointAddress, ep_in.bEndpointAddress,
-            ep_in.wMaxPacketSize, self._backend_desc,
-        )  # fmt: skip
+            dev.bus,
+            dev.address,
+            ep_out.bEndpointAddress,
+            ep_in.bEndpointAddress,
+            ep_in.wMaxPacketSize,
+            self._backend_desc,
+        )
 
     def _find_endpoints(self, usb: Any, intf: Any) -> tuple[Any, Any]:
         bulk = usb.util.ENDPOINT_TYPE_BULK
@@ -203,8 +209,12 @@ class UsbTransport(Transport):
                 if e.bEndpointAddress == expected:
                     return e
             if cands:
-                log.warning("expected %s endpoint 0x%02X not found; using 0x%02X",
-                            label, expected, cands[0].bEndpointAddress)  # fmt: skip
+                log.warning(
+                    "expected %s endpoint 0x%02X not found; using 0x%02X",
+                    label,
+                    expected,
+                    cands[0].bEndpointAddress,
+                )
                 return cands[0]
             raise TransportError(f"no bulk {label} endpoint on interface")
 
@@ -221,16 +231,16 @@ class UsbTransport(Transport):
         try:
             if self._claimed:
                 usb.util.release_interface(dev, self.selector.interface)
-        except Exception as e:  # noqa: BLE001 - best effort on a possibly vanished device
+        except Exception as e:
             log.debug("release_interface failed: %s", e)
         if self._detached_kernel_driver:
             try:
                 dev.attach_kernel_driver(self.selector.interface)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.debug("re-attaching kernel driver failed: %s", e)
         try:
             usb.util.dispose_resources(dev)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.debug("dispose_resources failed: %s", e)
         self._dev = None
         self._ep_in = self._ep_out = None
@@ -298,8 +308,11 @@ def usb_diagnostics(vendor_id: int = DEFAULT_VID, product_id: int = DEFAULT_PID)
 
     Never claims interfaces or sends protocol traffic.
     """
-    out: dict[str, Any] = {"platform": sys.platform, "vendor_id": f"0x{vendor_id:04X}",
-                           "product_id": f"0x{product_id:04X}"}  # fmt: skip
+    out: dict[str, Any] = {
+        "platform": sys.platform,
+        "vendor_id": f"0x{vendor_id:04X}",
+        "product_id": f"0x{product_id:04X}",
+    }
     try:
         usb = _import_usb()
         out["pyusb_version"] = getattr(usb, "__version__", "unknown")
@@ -316,7 +329,7 @@ def usb_diagnostics(vendor_id: int = DEFAULT_VID, product_id: int = DEFAULT_PID)
     devices: list[dict[str, Any]] = []
     try:
         found = list(usb.core.find(find_all=True, idVendor=vendor_id, idProduct=product_id, backend=backend))
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         out["enumeration_error"] = str(e)
         found = []
     for d in found:

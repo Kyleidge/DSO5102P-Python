@@ -130,8 +130,15 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     from hantek_mcp.transport.usb import usb_diagnostics
 
     cfg = _config(args)
-    _print({"version": __version__, "python": sys.version, "config_file_default": str(default_config_path()),
-            "data_dir": str(cfg.storage.data_dir), "usb": usb_diagnostics(cfg.usb.vendor_id, cfg.usb.product_id)})  # fmt: skip
+    _print(
+        {
+            "version": __version__,
+            "python": sys.version,
+            "config_file_default": str(default_config_path()),
+            "data_dir": str(cfg.storage.data_dir),
+            "usb": usb_diagnostics(cfg.usb.vendor_id, cfg.usb.product_id),
+        }
+    )
     return 0
 
 
@@ -145,13 +152,19 @@ def cmd_config(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="hantek-mcp", description="Hantek DSO5102P instrument control and MCP server")
+    p = argparse.ArgumentParser(
+        prog="hantek-mcp", description="Hantek DSO5102P instrument control and MCP server"
+    )
     p.add_argument("--version", action="version", version=f"hantek-mcp {__version__}")
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config", type=Path, help="TOML config file (default: %(default)s)", default=None)
     g = common.add_mutually_exclusive_group()
-    g.add_argument("--simulate", action="store_true", help="use the built-in simulator instead of USB hardware")
-    g.add_argument("--backend", choices=["usb", "simulator"], help="instrument backend (default from config: usb)")
+    g.add_argument(
+        "--simulate", action="store_true", help="use the built-in simulator instead of USB hardware"
+    )
+    g.add_argument(
+        "--backend", choices=["usb", "simulator"], help="instrument backend (default from config: usb)"
+    )
     common.add_argument("--data-dir", type=Path, help="capture/export directory")
     common.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     sub = p.add_subparsers(dest="command", required=True)
@@ -160,7 +173,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--transport", choices=["stdio", "http"], default="stdio")
     s.add_argument("--host", help="HTTP bind address (default 127.0.0.1)")
     s.add_argument("--port", type=int, help="HTTP port (default 8765)")
-    s.add_argument("--allow-remote", action="store_true", help="permit a non-loopback bind (requires --auth-token)")
+    s.add_argument(
+        "--allow-remote", action="store_true", help="permit a non-loopback bind (requires --auth-token)"
+    )
     s.add_argument("--auth-token", help="bearer token required on every HTTP request")
     s.add_argument("--no-connect", action="store_true", help="do not connect to the instrument at start-up")
     s.set_defaults(func=cmd_serve)
@@ -188,8 +203,21 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--label")
     c.add_argument("--csv", metavar="NAME", help="export as CSV into the export directory")
     c.add_argument("--npz", metavar="NAME", help="export as NPZ into the export directory")
-    c.add_argument("--measure", nargs="*", choices=["voltage", "frequency", "period", "duty_cycle", "rise_time",
-                                                     "fall_time", "rms", "peak_to_peak", "noise"])  # fmt: skip
+    c.add_argument(
+        "--measure",
+        nargs="*",
+        choices=[
+            "voltage",
+            "frequency",
+            "period",
+            "duty_cycle",
+            "rise_time",
+            "fall_time",
+            "rms",
+            "peak_to_peak",
+            "noise",
+        ],
+    )
     c.set_defaults(func=cmd_capture)
 
     t = sub.add_parser("selftest", parents=[common], help="probe-compensation acquisition self-test")
@@ -198,7 +226,9 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--expected-vpp", type=float, default=5.0)
     t.set_defaults(func=cmd_selftest)
 
-    d = sub.add_parser("diagnose", parents=[common], help="read-only USB/backend diagnostics (no device traffic)")
+    d = sub.add_parser(
+        "diagnose", parents=[common], help="read-only USB/backend diagnostics (no device traffic)"
+    )
     d.set_defaults(func=cmd_diagnose)
 
     cf = sub.add_parser("config", parents=[common], help="print the effective configuration")

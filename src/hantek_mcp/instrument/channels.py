@@ -58,7 +58,9 @@ class ChannelControlMixin(ControllerCore):
             presses += self.press(s, keys["menu"])
             st = self._refresh_settings(s)
             if not st.channels[channel].enabled:
-                raise SettingNotConfirmedError(f"could not open the CH{channel} menu with the channel enabled")
+                raise SettingNotConfirmedError(
+                    f"could not open the CH{channel} menu with the channel enabled"
+                )
         return presses
 
     def set_channel_enabled(self, channel: int, enabled: bool) -> SettingResult:
@@ -77,8 +79,15 @@ class ChannelControlMixin(ControllerCore):
                         st = self._refresh_settings(s)
                         if st.channels[channel].enabled:
                             presses += self.press(s, menu)
-            return self.verify(s, f"CH{channel}.enabled", enabled, prev,
-                               lambda x: x.channels[channel].enabled, self.write_method, presses)  # fmt: skip
+            return self.verify(
+                s,
+                f"CH{channel}.enabled",
+                enabled,
+                prev,
+                lambda x: x.channels[channel].enabled,
+                self.write_method,
+                presses,
+            )
 
     def set_volts_per_div(self, channel: int, volts_per_div: float, snap: bool = False) -> SettingResult:
         """Set the vertical scale as shown on screen (i.e. at the probe tip, including attenuation)."""
@@ -96,7 +105,11 @@ class ChannelControlMixin(ControllerCore):
             allowed = allowed_volts_per_div(probe)
             target_bnc = volts_per_div / probe
             lo, hi = DSO5102P_VB_RANGE
-            exact = [i for i in range(lo, hi + 1) if abs(VOLTS_PER_DIV[i] - target_bnc) <= 1e-9 * target_bnc + 1e-12]
+            exact = [
+                i
+                for i in range(lo, hi + 1)
+                if abs(VOLTS_PER_DIV[i] - target_bnc) <= 1e-9 * target_bnc + 1e-12
+            ]
             if exact:
                 idx = exact[0]
             elif snap:
@@ -122,9 +135,19 @@ class ChannelControlMixin(ControllerCore):
                 return None if ch.volts_per_div is None else round(ch.volts_per_div * (ch.probe or 1), 9)
 
             prev_val = None if c.volts_per_div is None else round(c.volts_per_div * probe, 9)
-            notes = [] if not snap or exact else [f"snapped {volts_per_div} V/div to nearest {requested} V/div"]
-            return self.verify(s, f"CH{channel}.volts_per_div", requested, prev_val, observe,
-                               self.write_method, presses, notes)  # fmt: skip
+            notes = (
+                [] if not snap or exact else [f"snapped {volts_per_div} V/div to nearest {requested} V/div"]
+            )
+            return self.verify(
+                s,
+                f"CH{channel}.volts_per_div",
+                requested,
+                prev_val,
+                observe,
+                self.write_method,
+                presses,
+                notes,
+            )
 
     def set_coupling(self, channel: int, coupling: str) -> SettingResult:
         validate_channel(channel)
@@ -143,8 +166,15 @@ class ChannelControlMixin(ControllerCore):
                     n = (COUPLINGS.index(coupling) - cur) % len(COUPLINGS)
                     presses += self._open_channel_menu(s, channel)
                     presses += self.press(s, Key.F1, n)
-            return self.verify(s, f"CH{channel}.coupling", coupling, prev,
-                               lambda x: x.channels[channel].coupling, self.write_method, presses)  # fmt: skip
+            return self.verify(
+                s,
+                f"CH{channel}.coupling",
+                coupling,
+                prev,
+                lambda x: x.channels[channel].coupling,
+                self.write_method,
+                presses,
+            )
 
     def set_probe(self, channel: int, attenuation: int) -> SettingResult:
         validate_channel(channel)
@@ -162,9 +192,16 @@ class ChannelControlMixin(ControllerCore):
                     n = (PROBE_FACTORS.index(attenuation) - cur) % len(PROBE_FACTORS)
                     presses += self._open_channel_menu(s, channel)
                     presses += self.press(s, Key.F4, n)
-            return self.verify(s, f"CH{channel}.probe_attenuation", attenuation, prev,
-                               lambda x: x.channels[channel].probe, self.write_method, presses,
-                               ["probe attenuation only rescales readings; it must match the physical probe"])  # fmt: skip
+            return self.verify(
+                s,
+                f"CH{channel}.probe_attenuation",
+                attenuation,
+                prev,
+                lambda x: x.channels[channel].probe,
+                self.write_method,
+                presses,
+                ["probe attenuation only rescales readings; it must match the physical probe"],
+            )
 
     def set_position(self, channel: int, divisions: float, tolerance_div: float = 0.04) -> SettingResult:
         """Move the channel's vertical offset (ground marker) to ``divisions`` from centre."""
@@ -199,9 +236,16 @@ class ChannelControlMixin(ControllerCore):
                     f"CH{channel} position: requested {target} counts, instrument reports {got}",
                     details={"requested_counts": target, "observed_counts": got},
                 )
-            res = SettingResult(f"CH{channel}.position_divisions", divisions, prev / cpd, got / cpd,
-                                self.write_method, "readback_confirmed_within_tolerance", presses,
-                                [f"tolerance ±{tol / cpd:.3f} div; counts/div={cpd:g} (nominal)"])  # fmt: skip
+            res = SettingResult(
+                f"CH{channel}.position_divisions",
+                divisions,
+                prev / cpd,
+                got / cpd,
+                self.write_method,
+                "readback_confirmed_within_tolerance",
+                presses,
+                [f"tolerance ±{tol / cpd:.3f} div; counts/div={cpd:g} (nominal)"],
+            )
             self.emit("setting_changed", **res.as_dict())
             return res
 
