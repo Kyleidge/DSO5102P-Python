@@ -9,6 +9,7 @@ endpoint), and this OS-level lock turns any second process into a clear
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -19,8 +20,16 @@ from hantek_mcp.errors import DeviceBusyError
 
 
 class OwnershipLock:
+    """Exclusive OS lock on ``<name>.lock``; owner details live in ``<name>.owner.json``.
+
+    The owner description is kept in a separate file because Windows byte-range locks
+    are mandatory: a second process could not even read a locked file to report who
+    owns it.
+    """
+
     def __init__(self, lock_dir: Path, name: str) -> None:
         self.path = Path(lock_dir) / f"{name}.lock"
+        self.owner_path = Path(lock_dir) / f"{name}.owner.json"
         self._fh: IO[str] | None = None
 
     @property
@@ -35,28 +44,30 @@ class OwnershipLock:
         try:
             _lock(fh)
         except OSError as e:
-            fh.seek(0)
-            owner = _read_owner(fh.read())
             fh.close()
+            owner = self.owner()
             raise DeviceBusyError(
                 "the instrument is already in use by another process"
                 + (f" (pid {owner.get('pid')}: {owner.get('description')})" if owner else ""),
                 details={"lock_file": str(self.path), "owner": owner},
             ) from e
-        fh.seek(0)
-        fh.truncate()
-        fh.write(json.dumps({"pid": os.getpid(), "description": description}))
-        fh.flush()
         self._fh = fh
+        with contextlib.suppress(OSError):  # owner details are informational only
+            self.owner_path.write_text(json.dumps({"pid": os.getpid(), "description": description}), "utf-8")
+
+    def owner(self) -> dict[str, Any]:
+        try:
+            return _read_owner(self.owner_path.read_text("utf-8"))
+        except OSError:
+            return {}
 
     def release(self) -> None:
         fh = self._fh
         if fh is None:
             return
+        with contextlib.suppress(OSError):
+            self.owner_path.unlink(missing_ok=True)
         try:
-            fh.seek(0)
-            fh.truncate()
-            fh.flush()
             _unlock(fh)
         finally:
             fh.close()

@@ -10,6 +10,7 @@ Errors are raised as ``ToolError`` carrying a JSON object with a stable
 from __future__ import annotations
 
 import functools
+import inspect
 import json
 import logging
 import time
@@ -139,7 +140,13 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
     def tool(annotations: ToolAnnotations, title: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         def deco(fn: Callable[..., Any]) -> Callable[..., Any]:
             names.append(fn.__name__)
-            app.add_tool(fn, name=fn.__name__, title=title, annotations=annotations)
+            app.add_tool(
+                fn,
+                name=fn.__name__,
+                title=title,
+                annotations=annotations,
+                description=inspect.cleandoc(fn.__doc__ or ""),
+            )
             return fn
 
         return deco
@@ -633,6 +640,7 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
 
     app.add_tool(
         scope_capture_screenshot,
+        description=inspect.cleandoc(scope_capture_screenshot.__doc__ or ""),
         name="scope_capture_screenshot",
         title="Screenshot (display image)",
         annotations=ACQ,
