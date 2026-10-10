@@ -217,8 +217,9 @@ class ControllerCore:
             try:
                 yield session
             except DeviceDisconnectedError as e:
-                self.record_error(name, e)
-                self._mark_lost()
+                if self.state != ConnectionState.LOST:  # handle once, at the innermost level that sees it
+                    self.record_error(name, e)
+                    self._mark_lost()
                 raise
             except HantekError as e:
                 if outer:
@@ -245,15 +246,26 @@ class ControllerCore:
         self.emit("abort_requested", busy_operation=self._busy_op, workflow=self._workflow)
 
     def begin_workflow(self, name: str) -> None:
-        if self._workflow is not None:
-            raise UnsupportedOperationError(f"workflow {self._workflow!r} is already running")
-        self._workflow = name
-        self._begin_token()
+        with self._locked("begin_workflow"):
+            if self._workflow is not None:
+                raise UnsupportedOperationError(f"workflow {self._workflow!r} is already running")
+            self._workflow = name
+            self._begin_token()
 
     def end_workflow(self) -> None:
-        self._workflow = None
-        if self._depth == 0:
-            self._token = None
+        with self._locked("end_workflow"):
+            self._workflow = None
+            if self._depth == 0:
+                self._token = None
+
+    @contextlib.contextmanager
+    def _locked(self, what: str) -> Iterator[None]:
+        if not self.lock.acquire(timeout=self.config.limits.max_lock_wait_s):
+            raise DeviceBusyError(f"{what}: instrument busy with {self._busy_op!r}")
+        try:
+            yield
+        finally:
+            self.lock.release()
 
     @property
     def active_workflow(self) -> str | None:
@@ -275,6 +287,7 @@ class ControllerCore:
                 if not self.simulated:
                     self._ownership.acquire(f"hantek-mcp {__version__}")
                 transport = self._factory(self.config)
+                self.transport = transport  # set before open() so _teardown always closes it
                 transport.open()
                 u = self.config.usb
                 session = ProtocolSession(

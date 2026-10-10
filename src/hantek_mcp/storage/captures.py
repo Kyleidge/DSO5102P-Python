@@ -46,7 +46,14 @@ def safe_filename(name: str, suffix: str) -> str:
     base = name.strip()
     if base.lower().endswith(suffix):
         base = base[: -len(suffix)]
-    if not base or not _NAME_RE.match(base) or ".." in base or base.upper().split(".")[0] in _WIN_RESERVED:
+    stem = base.split(".")[0].rstrip(" .").upper()  # Windows ignores trailing dots/spaces: "CON .csv" is CON
+    if (
+        not base
+        or not _NAME_RE.match(base)
+        or ".." in base
+        or stem in _WIN_RESERVED
+        or base != base.rstrip(" .")
+    ):
         raise PathNotAllowedError(
             f"invalid export name {name!r}: use letters, digits, space, '_', '-', '.' (no directories)"
         )
@@ -58,8 +65,10 @@ _WIN_RESERVED = {
     "PRN",
     "AUX",
     "NUL",
-    *(f"COM{i}" for i in range(1, 10)),
-    *(f"LPT{i}" for i in range(1, 10)),
+    "CONIN$",
+    "CONOUT$",
+    *(f"COM{i}" for i in "0123456789¹²³"),
+    *(f"LPT{i}" for i in "0123456789¹²³"),
 }
 
 
@@ -257,8 +266,11 @@ class CaptureStore:
         if not _inside(path, self.export_dir) or not path.is_file():
             raise CaptureNotFoundError(f"export {name!r} not found")
         cap = load_capture_file(path)
-        if cap.capture_id in self._index:
-            cap.capture_id = f"{cap.capture_id}-reloaded"
+        base, k = cap.capture_id, 1
+        cap.capture_id = f"{base}-reloaded"
+        while cap.capture_id in self._index:  # never overwrite an existing capture
+            k += 1
+            cap.capture_id = f"{base}-reloaded{k}"
         cap.warnings.append(f"reloaded from export file {path.name}")
         self.add(cap)
         return cap

@@ -86,7 +86,8 @@ async def main() -> None:
         f"({len(tools)} tools). Every tool returns a JSON object (structured content); failures are returned "
         'as tool errors whose text is `{"error": {"code", "message", "retryable", "details"}}`.',
         "",
-        "Annotations: **RO** read-only, **ACQ** acquires/changes acquisition state, **SET** changes instrument "
+        "Annotations: **RO** read-only, **ACQ** acquires/changes acquisition state (analysis tools are ACQ "
+        "because they acquire a new record when called without a `capture_id`), **SET** changes instrument "
         "settings (idempotent), **DEL** destructive.",
         "",
     ]

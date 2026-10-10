@@ -138,7 +138,10 @@ single sequence (key `SINGLE SEQ`) and then observed the trigger state machine
 dsoc-extended) leave an armed state and reach `stop`. Captures therefore carry
 `freshness` (`new_trigger_confirmed`, `forced_new`, `stopped_snapshot`,
 `running_snapshot`) plus a SHA-1 comparison with the previous record of the same
-channel (`identical_to_previous`), and both channels of
+channel (`identical_to_previous`; such records are always reported invalid). When the scope
+was already stopped and the armed state completes too fast to be observed, the record in memory
+is hashed *before* arming: a changed record is reported as `new_record_content_changed`, an
+unchanged one raises an error instead of being returned as new. Both channels of
 `capture_both_channels` come from one stopped acquisition (the manual states
 both channels are sampled simultaneously).
 

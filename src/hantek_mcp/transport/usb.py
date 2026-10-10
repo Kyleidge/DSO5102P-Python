@@ -165,6 +165,7 @@ class UsbTransport(Transport):
                         log.info("detached kernel driver from interface %d", sel.interface)
                 except (NotImplementedError, usb.core.USBError) as e:
                     log.debug("kernel driver check failed: %s", e)
+            self._dev = dev  # from here on close() releases whatever was acquired
             usb.util.claim_interface(dev, sel.interface)
             self._claimed = True
             ep_out, ep_in = self._find_endpoints(usb, intf)
@@ -180,6 +181,10 @@ class UsbTransport(Transport):
             if getattr(e, "errno", None) == errno.EBUSY:
                 raise TransportError("USB interface is busy (claimed by another program?)") from e
             raise TransportError(f"failed to open USB device: {e}") from e
+        except BaseException:
+            self._dev = dev
+            self.close()  # release the interface and re-attach the kernel driver
+            raise
         self._dev = dev
         self._ep_out = ep_out
         self._ep_in = ep_in

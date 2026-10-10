@@ -32,6 +32,11 @@ T = TypeVar("T")
 ServiceGetter = Callable[[], ScopeService]
 
 RO = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
+#: Analysis tools: read-only on an existing capture_id, but they ACQUIRE (arm Single, stop the scope)
+#: when called with a channel or without capture ids, so they must not be advertised as read-only.
+ANALYSE = ToolAnnotations(
+    read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
+)
 ACQ = ToolAnnotations(
     read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=False
 )
@@ -406,7 +411,7 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
             "capture or channel to acquire a new one. Check `valid`, `warnings`, `voltage_scaling_status` and "
             "`time_scaling_status` before reporting the value."
         )
-        tool(RO, title)(fn)
+        tool(ANALYSE, title)(fn)
 
     _measure_tool(
         "voltage", "Measure voltages", "Max, min, peak-to-peak, mean, RMS, AC RMS, top, base, amplitude."
@@ -425,7 +430,7 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
     _measure_tool("peak_to_peak", "Measure peak-to-peak", "Max - min over the record (includes noise).")
     _measure_tool("noise", "Measure noise", "Robust white-noise RMS estimate, ADC step and SNR estimate.")
 
-    @tool(RO, "Measure phase between channels")
+    @tool(ANALYSE, "Measure phase between channels")
     async def scope_measure_phase(
         capture_id_a: Annotated[
             str | None,
@@ -438,7 +443,7 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
         same two-channel acquisition (same group_id); otherwise the result is marked invalid."""
         return await call("scope_measure_phase", S().phase, capture_id_a, capture_id_b, acquire_mode)
 
-    @tool(RO, "Measure channel delay")
+    @tool(ANALYSE, "Measure channel delay")
     async def scope_measure_channel_delay(
         capture_id_a: str | None = None,
         capture_id_b: str | None = None,
@@ -452,7 +457,7 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
         )
 
     # ---------------------------------------------------------------- signal processing
-    @tool(RO, "FFT spectrum")
+    @tool(ANALYSE, "FFT spectrum")
     async def scope_fft(
         capture_id: OptCaptureId = None,
         channel: OptChannel = None,
@@ -475,7 +480,7 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
             "scope_fft", S().fft, capture_id, channel, window, detrend, scaling, max_points, n_peaks
         )
 
-    @tool(RO, "Spectrum peaks")
+    @tool(ANALYSE, "Spectrum peaks")
     async def scope_spectrum_peaks(
         capture_id: OptCaptureId = None,
         channel: OptChannel = None,
@@ -488,7 +493,7 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
             "scope_spectrum_peaks", S().spectrum_peaks, capture_id, channel, n_peaks, window, min_relative_db
         )
 
-    @tool(RO, "Cross-correlation")
+    @tool(ANALYSE, "Cross-correlation")
     async def scope_cross_correlation(
         capture_id_a: str | None = None,
         capture_id_b: str | None = None,
@@ -506,7 +511,7 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
         """Statistics, frequency, RMS difference, correlation and settings differences between two records."""
         return await call("scope_compare_captures", S().compare, capture_id_a, capture_id_b)
 
-    @tool(RO, "Detect edges")
+    @tool(ANALYSE, "Detect edges")
     async def scope_detect_edges(
         capture_id: OptCaptureId = None,
         channel: OptChannel = None,
@@ -516,7 +521,7 @@ def register_tools(app: MCPServer, get_service: ServiceGetter) -> list[str]:
         """Rising/falling edge times (hysteresis-filtered, interpolated)."""
         return await call("scope_detect_edges", S().edges, capture_id, channel, level, max_edges)
 
-    @tool(RO, "Detect pulses")
+    @tool(ANALYSE, "Detect pulses")
     async def scope_detect_pulses(
         capture_id: OptCaptureId = None,
         channel: OptChannel = None,

@@ -20,7 +20,8 @@ MEASUREMENT_GUIDE = """\
    `scaling.time_verified`.
 2. Configure with the set_* tools. Every change is read back from the instrument; report the
    `confirmed_value`, not what you asked for.
-3. Prefer `scope_capture(mode="single")`: freshness `new_trigger_confirmed` proves the record is new.
+3. Prefer `scope_capture(mode="single")`: freshness `new_trigger_confirmed` (or
+   `new_record_content_changed`) proves the record is new.
    `stopped_snapshot` / `running_snapshot` may be old data; `identical_to_previous` means stale.
 4. Check `quality` before measuring: `clipped` invalidates amplitudes, `adc_utilisation` < 0.25 means poor
    resolution, `samples_per_cycle` < 10 limits timing accuracy, fewer than 2 cycles prevents frequency.

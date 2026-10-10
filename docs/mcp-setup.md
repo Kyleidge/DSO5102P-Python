@@ -29,7 +29,8 @@ On stdio, stdout carries only MCP messages; logs go to stderr (add
 * `--auth-token TOKEN` (or `server.auth_token`) requires
   `Authorization: Bearer TOKEN` on every request.
 * A non-loopback `--host` is refused unless `--allow-remote` **and** a token of
-  at least 16 characters are given. Exposing an instrument that may be wired to
+  at least 16 characters are given. Wildcard binds (`0.0.0.0`, `::`) also need
+  `server.allowed_hosts` listing the `host:port` values clients will send. Exposing an instrument that may be wired to
   live electronics on a network is your responsibility; prefer an SSH tunnel.
 
 ## Client configuration

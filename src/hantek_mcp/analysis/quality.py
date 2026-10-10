@@ -20,7 +20,9 @@ def record_quality(raw: npt.NDArray[np.int8], identical_to_previous: bool | None
     hi = int(np.count_nonzero(r >= CLIP_HIGH))
     lo = int(np.count_nonzero(r <= CLIP_LOW))
     ptp = int(np.max(r) - np.min(r))
-    clipped = (hi + lo) >= 2 and (hi + lo) / n > 0.001
+    # The rails are ~5 divisions from centre, beyond the visible screen: any sample there means the
+    # true signal may have been larger, so maxima/minima/peak-to-peak cannot be trusted.
+    clipped = (hi + lo) >= 1
     utilisation = ptp / ADC_SPAN
     warnings: list[str] = []
     if clipped:

@@ -95,6 +95,10 @@ class ServerConfig(_Section):
     http_path: str = "/mcp"
     allow_remote: bool = Field(False, description="Required (with auth_token) to bind a non-loopback address")
     auth_token: str | None = Field(None, description="Bearer token required on every HTTP request when set")
+    allowed_hosts: list[str] = Field(
+        default_factory=list,
+        description="Extra accepted Host headers (host:port); required for wildcard binds",
+    )
     allowed_origins: list[str] = Field(default_factory=list)
 
 

@@ -26,7 +26,9 @@ import numpy.typing as npt
 
 from hantek_mcp.analysis.quality import record_quality
 from hantek_mcp.errors import (
+    AcquisitionError,
     HantekError,
+    NoSampleDataError,
     ParameterError,
     TriggerTimeoutError,
     UnsupportedOperationError,
@@ -199,12 +201,27 @@ class AcquisitionMixin(TriggerControlMixin):
         time.sleep(0.002 if self.simulated else 0.05)
 
     def _arm_and_wait(
-        self, s: ProtocolSession, timeout_s: float, force_on_timeout: bool
-    ) -> tuple[Freshness, str | None, str | None, bool, float, list[str]]:
+        self, s: ProtocolSession, timeout_s: float, force_on_timeout: bool, probe_channel: int
+    ) -> tuple[Freshness, str | None, str | None, bool, float, list[str], str | None]:
+        """Arm Single-Sequence and wait for completion.
+
+        Returns ``(freshness, state_before, state_after, trigger_observed, wait_s, warnings,
+        pre_hash)``. When the scope was already stopped, the current record of ``probe_channel``
+        is hashed first (``pre_hash``) so that a completion without an observed armed state can
+        still be checked for a content change by the caller.
+        """
         st0 = self._refresh_settings(s)
         before = st0.trigger.state
+        pre_hash: str | None = None
+        if before == "stop":
+            try:
+                pre = s.read_samples(probe_channel)
+                pre_hash = hashlib.sha1(pre.tobytes(), usedforsecurity=False).hexdigest()
+            except NoSampleDataError:
+                pre_hash = None
         self.press(s, Key.SINGLE_SEQ)
-        t0 = time.monotonic()
+        t_start = time.monotonic()
+        deadline = t_start + timeout_s
         observed_armed = False
         forced = False
         warnings: list[str] = []
@@ -223,15 +240,19 @@ class AcquisitionMixin(TriggerControlMixin):
                 else:
                     fresh = Freshness.STOPPED_SNAPSHOT
                     warnings.append(
-                        "single-sequence completed before the armed state was observed; the record is presumed "
-                        "new but this could not be confirmed"
+                        "single-sequence completed before the armed state was observed; freshness is "
+                        "established by comparing the record with the one in memory before arming"
+                        if pre_hash
+                        else "single-sequence completed before the armed state was observed; the record "
+                        "could not be confirmed as new"
                     )
-                return fresh, before, state, observed_armed and not forced, time.monotonic() - t0, warnings
-            if time.monotonic() - t0 > timeout_s:
+                wait_s = time.monotonic() - t_start
+                return fresh, before, state, observed_armed and not forced, wait_s, warnings, pre_hash
+            if time.monotonic() > deadline:
                 if force_on_timeout and not forced:
                     self.press(s, Key.FORCE_TRIG)
                     forced = True
-                    t0 = time.monotonic() - timeout_s + min(2.0, timeout_s)
+                    deadline = time.monotonic() + min(2.0, timeout_s)  # time for the forced record
                     continue
                 raise TriggerTimeoutError(
                     f"no trigger within {timeout_s} s (trigger state {state!r}); the instrument is left armed. "
@@ -280,8 +301,11 @@ class AcquisitionMixin(TriggerControlMixin):
             restart = False
             observed = False
             wait_s: float | None = None
+            pre_hash: str | None = None
             if mode == "single":
-                fresh, before, after, observed, wait_s, w = self._arm_and_wait(s, timeout_s, force_on_timeout)
+                fresh, before, after, observed, wait_s, w, pre_hash = self._arm_and_wait(
+                    s, timeout_s, force_on_timeout, channels[0]
+                )
                 warnings += w
             elif mode == "stop_and_read":
                 before = self._refresh_settings(s).trigger.state
@@ -306,6 +330,8 @@ class AcquisitionMixin(TriggerControlMixin):
                 caps = self._download(
                     s, channels, mode, fresh, before, after, observed, wait_s, warnings, label
                 )
+                if mode == "single" and fresh == Freshness.STOPPED_SNAPSHOT and pre_hash is not None:
+                    self._check_single_changed(caps, pre_hash)
             finally:
                 if restart:
                     try:
@@ -465,6 +491,25 @@ class AcquisitionMixin(TriggerControlMixin):
             simulated=self.simulated,
         )
         return cap
+
+    def _check_single_changed(self, caps: list[WaveformCapture], pre_hash: str) -> None:
+        """Decide freshness of a single sequence whose armed state was never observed."""
+        first = caps[0]
+        if first.raw_sha1 == pre_hash:
+            raise AcquisitionError(
+                "Single-Sequence did not produce a new record: the record is byte-identical to the one in "
+                "memory before arming (the key press may not have been applied). Retry the capture.",
+                details={
+                    "channel": first.channel,
+                    "trigger_state_after": first.acquisition.trigger_state_after,
+                },
+            )
+        for c in caps:
+            c.acquisition.freshness = Freshness.NEW_RECORD_CONTENT_CHANGED
+            c.warnings = [w for w in c.warnings if "armed state was observed" not in w]
+            c.warnings.append(
+                "trigger armed state not observed (fast completion); the record differs from the pre-arm record"
+            )
 
     # -- misc ------------------------------------------------------------------------------------
 

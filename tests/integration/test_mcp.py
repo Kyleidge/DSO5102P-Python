@@ -21,7 +21,7 @@ from mcp.shared._httpx_utils import create_mcp_http_client
 
 from hantek_mcp.config import AppConfig
 from hantek_mcp.errors import ParameterError
-from hantek_mcp.mcp.server import build_server, check_http_security, http_app
+from hantek_mcp.mcp.server import build_server, check_http_security, http_app, transport_security
 from hantek_mcp.service import ScopeService
 from tests.conftest import sim_config
 
@@ -377,7 +377,19 @@ def test_remote_bind_policy() -> None:
     cfg = AppConfig.model_validate(
         {"server": {"http_host": "0.0.0.0", "allow_remote": True, "auth_token": "x" * 32}}
     )
+    with pytest.raises(ParameterError):  # wildcard binds need explicit Host allow-list entries
+        check_http_security(cfg)
+    cfg = AppConfig.model_validate(
+        {"server": {"http_host": "0.0.0.0", "allow_remote": True, "auth_token": "x" * 32,
+                    "allowed_hosts": ["192.168.1.5:8765"]}}
+    )  # fmt: skip
     check_http_security(cfg)
+    assert "192.168.1.5:8765" in transport_security(cfg).allowed_hosts
+    v6 = AppConfig.model_validate(
+        {"server": {"http_host": "fe80::1", "allow_remote": True, "auth_token": "x" * 32}}
+    )
+    check_http_security(v6)
+    assert "[fe80::1]:8765" in transport_security(v6).allowed_hosts
     check_http_security(AppConfig())
 
 

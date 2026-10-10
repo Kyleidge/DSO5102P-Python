@@ -68,6 +68,10 @@ print(cap.sample_rate_hz, cap.voltage_status, cap.acquisition.freshness)
 * The GUI runs all instrument/analysis work on a `QThreadPool`; results return
   through queued Qt signals. Live refresh is single-flight (a tick is skipped
   while the previous capture is still running).
+* **Resynchronisation:** after a timeout or corrupt frame the session sends an echo
+  carrying a random nonce and discards every frame until that echo returns. The
+  scope answers in order, so a reply that arrives late can never be mistaken
+  for the answer to a later request.
 * **Abort:** `request_abort()` increments a generation counter. The running
   operation or workflow captured the generation when it started and raises
   `AbortedError` at its next check point (trigger-wait polling, every key press,

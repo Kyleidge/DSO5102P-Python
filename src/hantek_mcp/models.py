@@ -23,6 +23,8 @@ class Freshness(StrEnum):
 
     NEW_TRIGGER_CONFIRMED  single-sequence was armed by us and the trigger state was
                            observed to complete (ready/armed -> stop) before download.
+    NEW_RECORD_CONTENT_CHANGED  armed by us from STOP; the armed state completed too fast to be
+                           observed, but the record differs from the one in memory before arming.
     FORCED_NEW             armed by us and completed via Force Trigger (untriggered data).
     STOPPED_SNAPSHOT       acquisition stopped by us, then the frozen buffer was read; it is
                            the most recent record but may pre-date the request.
@@ -31,6 +33,7 @@ class Freshness(StrEnum):
     """
 
     NEW_TRIGGER_CONFIRMED = "new_trigger_confirmed"
+    NEW_RECORD_CONTENT_CHANGED = "new_record_content_changed"
     FORCED_NEW = "forced_new"
     STOPPED_SNAPSHOT = "stopped_snapshot"
     RUNNING_SNAPSHOT = "running_snapshot"

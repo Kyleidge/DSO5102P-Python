@@ -111,6 +111,20 @@ def _is_loopback(host: str) -> bool:
         return False
 
 
+def _is_wildcard(host: str) -> bool:
+    return host in ("0.0.0.0", "::", "")
+
+
+def _host_port(host: str, port: int) -> str:
+    """Host header form: IPv6 literals are bracketed."""
+    try:
+        if ipaddress.ip_address(host).version == 6:
+            return f"[{host}]:{port}"
+    except ValueError:
+        pass
+    return f"{host}:{port}"
+
+
 def check_http_security(config: AppConfig) -> None:
     sc = config.server
     if not _is_loopback(sc.http_host):
@@ -121,14 +135,20 @@ def check_http_security(config: AppConfig) -> None:
             )
         if not sc.auth_token or len(sc.auth_token) < 16:
             raise ParameterError("remote HTTP access requires server.auth_token with at least 16 characters")
+        if _is_wildcard(sc.http_host) and not sc.allowed_hosts:
+            raise ParameterError(
+                f"binding the wildcard address {sc.http_host!r} requires server.allowed_hosts (the host:port "
+                "values clients will send, e.g. ['192.168.1.5:8765']) for Host-header validation"
+            )
 
 
 def transport_security(config: AppConfig) -> TransportSecuritySettings:
     sc = config.server
     hosts = [f"127.0.0.1:{sc.http_port}", f"localhost:{sc.http_port}", f"[::1]:{sc.http_port}"]
     origins = [f"http://127.0.0.1:{sc.http_port}", f"http://localhost:{sc.http_port}"]
-    if not _is_loopback(sc.http_host):
-        hosts.append(f"{sc.http_host}:{sc.http_port}")
+    if not _is_loopback(sc.http_host) and not _is_wildcard(sc.http_host):
+        hosts.append(_host_port(sc.http_host, sc.http_port))
+    hosts += list(sc.allowed_hosts)
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=hosts,

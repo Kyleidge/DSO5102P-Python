@@ -108,9 +108,20 @@ def test_frame_decoder_detects_checksum_and_resyncs() -> None:
     with pytest.raises(ChecksumError):
         dec.feed(bytes(bad) + good)
     assert dec.feed(b"")[0].payload == b"ok"
-    with pytest.raises(FramingError):
-        dec.feed(b"\x00\x01" + good)
-    assert dec.feed(b"")[0].payload == b"ok"
+    # garbage between frames is skipped without losing either frame (review finding #7)
+    frames = dec.feed(good + b"\x00\xff\x01" + good)
+    assert [f.payload for f in frames] == [b"ok", b"ok"]
+    assert dec.resyncs == 1 and dec.discarded_bytes == 3
+
+
+def test_frame_decoder_keeps_frames_decoded_before_a_checksum_error() -> None:
+    good = encode_response(Command.ECHO, b"first")
+    bad = bytearray(encode_response(Command.ECHO, b"xx"))
+    bad[-1] ^= 0xFF
+    dec = FrameDecoder()
+    with pytest.raises(ChecksumError):
+        dec.feed(good + bytes(bad))
+    assert [f.payload for f in dec.feed(b"")] == [b"first"]
 
 
 def test_decode_frame_rejects_trailing_bytes() -> None:

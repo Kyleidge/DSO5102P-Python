@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import threading
 import time
 from collections import Counter
@@ -21,8 +22,8 @@ import numpy as np
 import numpy.typing as npt
 
 from hantek_mcp.errors import (
+    ChecksumError,
     DeviceDisconnectedError,
-    FramingError,
     HantekError,
     NotConnectedError,
     ProtocolError,
@@ -127,14 +128,14 @@ class ProtocolSession:
             except ScopeTimeoutError:
                 continue
             self.stats.bytes_received += len(chunk)
+            resyncs = self._decoder.resyncs
             try:
                 self._frames.extend(self._decoder.feed(chunk))
-            except FramingError:
-                self.stats.framing_errors += 1
-                raise
-            except ProtocolError as e:  # checksum
+            except ChecksumError:
                 self.stats.checksum_errors += 1
-                raise e
+                raise
+            finally:
+                self.stats.framing_errors += self._decoder.resyncs - resyncs
         frame = self._frames.pop(0)
         self.stats.frames_received += 1
         return frame
@@ -216,14 +217,41 @@ class ProtocolSession:
                 if i + 1 >= attempts:
                     break
                 self.stats.retries += 1
-                log.warning("%s failed (%s); flushing and retrying (%d/%d)", what, e, i + 1, attempts - 1)
-                self.flush()
+                log.warning(
+                    "%s failed (%s); resynchronising and retrying (%d/%d)", what, e, i + 1, attempts - 1
+                )
+                self.resync()
         assert last is not None
         if not idempotent:
             # The instrument may or may not have executed the command; resynchronise and report.
             with contextlib.suppress(HantekError):
-                self.flush()
+                self.resync()
         raise last
+
+    def resync(self) -> None:
+        """Bring the response stream back in step with our requests.
+
+        Draining for a short while is not enough: a reply delayed beyond the flush window
+        would later be taken as the answer to the *next* request. The instrument answers in
+        order, so an echo with a unique nonce is sent and every frame before its reply is
+        discarded.
+        """
+        with self._lock:
+            self.flush()
+            nonce = b"resync-" + os.urandom(6)
+            try:
+                self._send(Command.ECHO, nonce, Marker.NORMAL)
+                deadline = time.monotonic() + max(self.timeouts.default_s, 1.0)
+                for _ in range(MAX_STRAY_FRAMES):
+                    f = self._read_frame(deadline)
+                    if f.command == Command.ECHO | RESPONSE_FLAG and f.payload == nonce:
+                        return
+                    self.stats.stray_frames += 1
+            except DeviceDisconnectedError:
+                raise
+            except HantekError as e:
+                log.warning("resynchronisation failed: %s", e)
+                self.flush()
 
     # -- typed requests --------------------------------------------------------------------------
 

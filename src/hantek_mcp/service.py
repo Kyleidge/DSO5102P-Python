@@ -9,6 +9,7 @@ thread.
 
 from __future__ import annotations
 
+import itertools
 import logging
 import math
 import operator
@@ -388,9 +389,11 @@ class ScopeService:
         if c.acquisition.settings_changed_during_capture:
             valid = False
             warnings.append("settings changed during capture")
-        if q.get("identical_to_previous") and c.acquisition.freshness == Freshness.RUNNING_SNAPSHOT:
+        if q.get("identical_to_previous"):
             valid = False
-            warnings.append("record identical to previous capture while running: stale buffer suspected")
+            warnings.append(
+                "record is byte-identical to the previous capture of this channel: stale buffer suspected"
+            )
         if timing_based and c.time_status == "unavailable":
             valid = False
             warnings.append("time scaling unavailable: timing results are in samples")
@@ -455,7 +458,10 @@ class ScopeService:
             elif kind in ("frequency", "period"):
                 tim = True
                 d = meas.frequency(y, dt, c.simulated)
-                d["unit"] = "Hz" if kind == "frequency" else tunit
+                if kind == "frequency":
+                    d["unit"] = "Hz" if dt is not None else "cycles/sample"
+                else:
+                    d["unit"] = tunit
                 tc = c.trigger_settings.get("counter_frequency_hz")
                 if tc:
                     d["instrument_trigger_counter_hz"] = tc
@@ -1208,6 +1214,20 @@ class ScopeService:
             "start_acquisition": self.start,
             "stop_acquisition": self.stop,
         }
+        try:
+            return self._plan_dispatch(action, a, last_pair, table)
+        except (TypeError, ValueError) as e:
+            if isinstance(e, HantekError):
+                raise
+            raise ParameterError(f"invalid arguments for {action}: {e}") from e
+
+    def _plan_dispatch(
+        self,
+        action: str,
+        a: dict[str, Any],
+        last_pair: tuple[str, str] | None,
+        table: dict[str, Callable[..., Any]],
+    ) -> Any:
         if action == "wait":
             secs = float(a.get("seconds", 0))
             if not 0 <= secs <= 10:
@@ -1227,10 +1247,7 @@ class ScopeService:
                 f"unknown plan action {action!r}",
                 details={"allowed": [*table, "wait", "phase", "channel_delay"]},
             )
-        try:
-            return fn(**a)
-        except TypeError as e:
-            raise ParameterError(f"invalid arguments for {action}: {e}") from e
+        return fn(**a)
 
     # -- diagnostics -----------------------------------------------------------------------------
 
@@ -1277,7 +1294,8 @@ class ScopeService:
         checks.append(
             {
                 "check": "fresh_record",
-                "pass": cap.acquisition.freshness == Freshness.NEW_TRIGGER_CONFIRMED,
+                "pass": cap.acquisition.freshness
+                in (Freshness.NEW_TRIGGER_CONFIRMED, Freshness.NEW_RECORD_CONTENT_CHANGED),
                 "value": str(cap.acquisition.freshness),
             }
         )
@@ -1337,6 +1355,8 @@ class ScopeService:
 def _decimate(
     c: WaveformCapture, max_points: int, method: str
 ) -> tuple[list[float], list[float], list[float] | None]:
+    """Decimate to <= max_points. The record is split into contiguous blocks (the last one may be
+    shorter) so no samples at the end are dropped."""
     n = c.sample_count
     t, raw, v = c.time_s, c.raw_samples.astype(np.float64), c.voltage_v
     if n <= max_points:
@@ -1344,18 +1364,20 @@ def _decimate(
     if method == "stride":
         idx = np.linspace(0, n - 1, max_points).astype(int)
         return t[idx].tolist(), raw[idx].tolist(), None if v is None else v[idx].tolist()
+    nblocks = max_points if method == "mean" else max(1, max_points // 2)
+    bounds = np.linspace(0, n, nblocks + 1).astype(int)
+    starts = bounds[:-1]
     if method == "mean":
-        b = math.ceil(n / max_points)
-        m = n // b * b
-        return (
-            t[:m].reshape(-1, b).mean(1).tolist(),
-            raw[:m].reshape(-1, b).mean(1).tolist(),
-            None if v is None else v[:m].reshape(-1, b).mean(1).tolist(),
-        )
-    b = math.ceil(n / (max_points // 2))
-    m = n // b * b
-    rb = raw[:m].reshape(-1, b)
-    lo_i = rb.argmin(1) + np.arange(rb.shape[0]) * b
-    hi_i = rb.argmax(1) + np.arange(rb.shape[0]) * b
-    idx = np.sort(np.stack([lo_i, hi_i], 1), axis=1).ravel()
+
+        def bmean(x: npt.NDArray[np.float64]) -> list[float]:
+            out: list[float] = (np.add.reduceat(x, starts) / np.diff(bounds)).tolist()
+            return out
+
+        return bmean(t), bmean(raw), None if v is None else bmean(v)
+    idx_list: list[int] = []
+    for b0, b1 in itertools.pairwise(bounds):
+        blk = raw[b0:b1]
+        i_lo, i_hi = b0 + int(np.argmin(blk)), b0 + int(np.argmax(blk))
+        idx_list += sorted({i_lo, i_hi})
+    idx = np.array(idx_list)
     return t[idx].tolist(), raw[idx].tolist(), None if v is None else v[idx].tolist()

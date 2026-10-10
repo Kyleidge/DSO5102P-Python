@@ -138,8 +138,10 @@ class FrameDecoder:
 
     def __init__(self) -> None:
         self._buf = bytearray()
+        self._ready: list[Frame] = []
         self.checksum_errors = 0
         self.resyncs = 0
+        self.discarded_bytes = 0
 
     @property
     def pending(self) -> int:
@@ -147,33 +149,48 @@ class FrameDecoder:
 
     def clear(self) -> None:
         self._buf.clear()
+        self._ready.clear()
 
     def feed(self, data: bytes | bytearray) -> list[Frame]:
+        """Add bytes and return every complete, valid frame.
+
+        Garbage between frames is skipped and counted (``resyncs``/``discarded_bytes``).
+        A frame with a bad checksum raises :class:`ChecksumError`; frames decoded before it
+        are kept and returned by the next call, so a valid reply is never lost.
+        """
         self._buf.extend(data)
-        frames: list[Frame] = []
+        frames, self._ready = self._ready, []
         while True:
-            frame = self._next()
+            try:
+                frame = self._next()
+            except ChecksumError:
+                self._ready = frames
+                raise
             if frame is None:
                 return frames
             frames.append(frame)
 
+    def _skip(self, n: int) -> None:
+        del self._buf[:n]
+        self.discarded_bytes += n
+        self.resyncs += 1
+
     def _next(self) -> Frame | None:
         buf = self._buf
-        # Discard garbage until a plausible marker is at the head of the buffer.
-        skipped = 0
-        while buf and buf[0] not in (Marker.NORMAL, Marker.DEBUG):
-            del buf[0]
-            skipped += 1
-        if skipped:
-            self.resyncs += 1
-            raise FramingError(f"discarded {skipped} byte(s) preceding a frame marker")
-        if len(buf) < 3:
-            return None
-        length = buf[1] | (buf[2] << 8)
-        if length < 2:
-            del buf[0]
-            self.resyncs += 1
-            raise FramingError(f"invalid frame length {length}")
+        while True:
+            # Discard garbage until a plausible marker is at the head of the buffer.
+            skipped = 0
+            while skipped < len(buf) and buf[skipped] not in (Marker.NORMAL, Marker.DEBUG):
+                skipped += 1
+            if skipped:
+                self._skip(skipped)
+            if len(buf) < 3:
+                return None
+            length = buf[1] | (buf[2] << 8)
+            if length < 2:
+                self._skip(1)  # not a real frame start
+                continue
+            break
         total = 3 + length
         if len(buf) < total:
             return None
@@ -192,7 +209,7 @@ def decode_frame(raw: bytes) -> Frame:
     """Decode exactly one complete frame (raises if incomplete or trailing bytes remain)."""
     dec = FrameDecoder()
     frames = dec.feed(raw)
-    if len(frames) != 1 or dec.pending:
+    if len(frames) != 1 or dec.pending or dec.discarded_bytes:
         raise FramingError(
             f"expected exactly one frame, got {len(frames)} with {dec.pending} trailing byte(s)"
         )
