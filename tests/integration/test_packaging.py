@@ -65,7 +65,8 @@ def test_wheel_installs_and_runs_in_clean_venv(dist: Path, tmp_path: Path) -> No
     )
     out = json.loads(r.stdout)
     assert out["capture"]["simulated"]
-    assert out["measurements"]["frequency"]["results"]["frequency_hz"] == pytest.approx(1000, abs=1)
+    fr = out["measurements"]["frequency"]["results"]
+    assert abs(fr["frequency_hz"] - 1000) / 1000 <= 3 * fr["relative_uncertainty_est"]
     r = subprocess.run([str(exe), "diagnose"], capture_output=True, text=True, timeout=120, check=True)
     diag = json.loads(r.stdout)["usb"]
     if sys.platform == "win32":

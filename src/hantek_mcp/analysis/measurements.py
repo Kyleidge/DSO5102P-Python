@@ -173,17 +173,31 @@ def _timing_unc(
     return out
 
 
+def quantization_step(a: FloatArray) -> float:
+    """ADC step of a quantised record (smallest spacing between distinct values), 0 if not quantised."""
+    u = np.unique(a)
+    if u.size < 2 or u.size > 512:  # 8-bit data has at most 256 distinct values
+        return 0.0
+    return float(np.min(np.diff(u)))
+
+
 def _edge_jitter(a: FloatArray, edges: FloatArray, dt: float | None) -> float:
-    """noise_rms / |slope| at the crossings, in seconds (or samples when dt is None)."""
+    """Timing uncertainty of one interpolated crossing, in seconds (or samples when dt is None).
+
+    sqrt(noise_rms^2 + (LSB/2)^2) / |slope|: random noise plus the ADC quantisation of the
+    samples either side of the crossing. Half an LSB (the error bound) is used instead of
+    LSB/sqrt(12) because with sub-LSB noise the quantisation error is systematic, not random.
+    """
     if edges.size == 0:
         return 0.0
     noise = float(noise_estimate(a)["noise_rms"])
+    lsb = quantization_step(a)
     grad = np.gradient(a)
     idx = np.clip(np.round(edges).astype(int), 0, a.size - 1)
     slope = float(np.median(np.abs(grad[idx])))  # units per sample
     if slope <= 0:
         return 0.0
-    return noise / slope * (dt if dt is not None else 1.0)
+    return math.sqrt(noise**2 + (lsb / 2.0) ** 2) / slope * (dt if dt is not None else 1.0)
 
 
 def frequency(y: npt.ArrayLike, dt: float | None, simulated: bool = False) -> dict[str, Any]:

@@ -209,6 +209,8 @@ def _fmt_si(v: float | None, unit: str) -> str:
     if v is None:
         return "—"
     av = abs(v)
+    if av == 0:
+        return f"0 {unit}"
     for scale, prefix in ((1e9, "G"), (1e6, "M"), (1e3, "k"), (1, ""), (1e-3, "m"), (1e-6, "µ"), (1e-9, "n")):
         if av >= scale or scale == 1e-9:
             return f"{v / scale:.4g} {prefix}{unit}"
